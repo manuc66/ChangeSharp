@@ -16,7 +16,7 @@ changesharp release
 
 ## Documentation
 
-See [docs/ChangeSharp.md](docs/ChangeSharp.md) for full documentation.
+See the [documentation site](https://manuc66.github.io/ChangeSharp/) — quick start in [Getting Started](https://manuc66.github.io/ChangeSharp/getting-started/).
 
 ## Features
 

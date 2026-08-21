@@ -1,4 +1,4 @@
-# Multi-Team Monorepo Support (Step 18)
+# Multi-Team Monorepo Support (Step 17)
 
 ChangeSharp is evolving to support large-scale enterprise monorepos where multiple teams manage different services within the same repository.
 

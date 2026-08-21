@@ -29,14 +29,14 @@
 
 In the .NET ecosystem, release versioning is heavily dominated by tools like **GitVersion** and **MinVer** (commit-driven) or general tools like **Changie** and **Release Please**.
 
-ChangeSharp distinguishes itself as the **Changelog-driven versioning enterprise-ready for .NET with AI-native integration**:
+ChangeSharp distinguishes itself as the **changelog-driven versioning for .NET with CI-ready gates and AI-native integration**:
 
 *   **Natively Integrated in .NET**: First-class support for MSBuild, .NET Global Tools, and C# library usage.
-*   **Safety Gates (The Differentiator)**: Unlike simple fragment managers, ChangeSharp includes **Syntactic Safety Gates** to cross-verify declared SemVer impact against actual API surface changes.
+*   **Safety Gates (The Differentiator)**: Unlike simple fragment managers, ChangeSharp enforces a **minimum API impact level** (`--api-min-level`): the CI computes the actual API surface impact with its own diff tool, and ChangeSharp fails the build if the declared fragments are below that level.
 *   **Separation of Concerns**: Git history is for developers; changelogs are for users.
 *   **Conflict-Free Workflows**: Independent Markdown fragments eliminate merge conflicts on `CHANGELOG.md`.
 *   **AI-Native (MCP Layer)**: First tool to expose changelog management to AI agents via the **Model Context Protocol (MCP)**, with built-in security approval gates.
-*   **Enterprise-Ready**: Support for complex monorepos, hierarchical configurations, and strict CI/CD validation.
+*   **Roadmap**: Monorepo support (hierarchical configuration, scoped fragments) is planned — see [Monorepo Support](features/MonorepoSupport.md) and the [Roadmap](Roadmap.md).
 
 #### Why This Matters
-Unlike commit-driven tools, ChangeSharp ensures that version numbers are predictable and tied to documented user-facing value. It provides a level of automated trust (via Safety Gates) that neither simple fragment tools nor commit-parsers can offer today.
+Unlike commit-driven tools, ChangeSharp ensures that version numbers are predictable and tied to documented user-facing value. Its `--api-min-level` safety gate verifies that declared fragments are never lower than the actual API surface impact measured by CI.

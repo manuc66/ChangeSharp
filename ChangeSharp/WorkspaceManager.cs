@@ -387,6 +387,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         nextVersion = NextVersionComputer.ComputeVersion(currentVersion, mergedChangeSet, config.SemverPolicy);
     }
 
+    public bool ShouldDryRunByDefault()
+    {
+        var config = LoadConfig();
+        return config.Security.DryRunByDefault;
+    }
+
     public (string Version, string[] Warnings) Release(DateTime releaseDate, bool dryRun = false, string? forcedVersion = null)
     {
         var config = LoadConfig();

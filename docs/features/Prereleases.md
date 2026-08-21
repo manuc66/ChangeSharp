@@ -54,11 +54,11 @@ Each branch maintains its own pre-release history and counter.
 ## Configuration
 ```json
 {
-  "preRelease": {
-    "enabled": true,
-    "branchAsIdentifier": true,
-    "sanitizeBranchName": true,
-    "maxIdentifierLength": 30
+  "PreRelease": {
+    "Enabled": true,
+    "BranchAsIdentifier": true,
+    "SanitizeBranchName": true,
+    "MaxIdentifierLength": 30
   }
 }
 ```

@@ -39,7 +39,7 @@ Shows pending fragments and the version bump they will trigger.
 changesharp release
 ```
 
-ChangeSharp aggregates the fragments, bumps the version in your project files, updates `CHANGELOG.md`, and archives the consumed fragments.
+ChangeSharp aggregates the fragments, bumps the version in your project files, updates `CHANGELOG.md`, and removes the consumed fragments.
 
 ## What you get
 

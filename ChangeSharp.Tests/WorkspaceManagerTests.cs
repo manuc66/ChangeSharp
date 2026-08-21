@@ -222,6 +222,29 @@ public class WorkspaceManagerTests
     }
 
     [Test]
+    public void SecurityConfig_DryRunByDefault_DefaultsToFalse()
+    {
+        var config = new ChangeSharpConfig();
+        Assert.That(config.Security.DryRunByDefault, Is.False);
+    }
+
+    [Test]
+    public void ShouldDryRunByDefault_ReadsConfig()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        Assert.That(manager.ShouldDryRunByDefault(), Is.False, "Default config must not force dry-run.");
+
+        string configPath = Path.Combine(_testDir, "changesharp.json");
+        string json = File.ReadAllText(configPath);
+        var config = System.Text.Json.JsonSerializer.Deserialize<ChangeSharpConfig>(json);
+        config.Security.DryRunByDefault = true;
+        File.WriteAllText(configPath, System.Text.Json.JsonSerializer.Serialize(config));
+
+        Assert.That(manager.ShouldDryRunByDefault(), Is.True, "Security.DryRunByDefault=true must be honored.");
+    }
+
+    [Test]
     public void Initialize_AutoDiscoversTargets_Works()
     {
         // Setup dummy project files

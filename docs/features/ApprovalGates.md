@@ -45,5 +45,7 @@ Security gates can be configured in `changesharp.json`:
 }
 ```
 
-- `DryRunByDefault`: If true, `release` without flags will default to dry-run.
-- `AllowAgentRelease`: If false, the MCP server will reject any non-dry-run request.
+- `DryRunByDefault`: If true, `changesharp release` without `--dry-run` defaults to dry-run (CLI only).
+- `RequireApproval` / `AllowAgentRelease`: Gates the MCP `perform_release` tool. If `RequireApproval` is true **or** `AllowAgentRelease` is false, any non-dry-run release request is rejected unless the environment variable `CHANGESHARP_ALLOW_UNSAFE_RELEASE=true` is set.
+
+> Note: the CLI `release` command does not read `RequireApproval`/`AllowAgentRelease`. It only honors the explicit `--require-approval` flag (same `CHANGESHARP_ALLOW_UNSAFE_RELEASE` env var). To gate CLI releases via config, set `DryRunByDefault` and rely on a human or CI runner to perform the final release.

@@ -48,7 +48,7 @@ See `samples/ci/github-bot.yml` for a full implementation.
     3.  **Perform Release**: `changesharp release`
         - Aggregates fragments.
         - Updates `CHANGELOG.md` and project files (`.csproj`, `package.json`, etc.).
-        - Moves fragments to `.changesharp/released/`.
+        - Stages fragments in `.changesharp/releasing/`, then deletes them after a successful release.
     4.  **Git Tag & Push**: (Scripted)
         - `git add . && git commit -m "chore: release v1.2.0"`
         - `git tag v1.2.0 && git push --follow-tags`
@@ -103,5 +103,5 @@ jobs:
 
 ## ⚠️ Reliability & Error Handling
 
--   **Missing External Tools**: If a configured tool (e.g., for Syntactic Validation) is missing, ChangeSharp will **Exit Code 1** by default. This can be configured to **Warn** in `changesharp.json` to avoid breaking pipelines during environment migration.
+-   **Missing External Tools**: ChangeSharp does not run external tools itself. Version propagation handlers that cannot locate their target file (e.g., a configured `.csproj` path) emit a warning to stderr and continue; the release is not blocked.
 -   **Idempotence**: Running `release` twice on the same state will result in **Exit Code 2** (No changes to release), which is safe and should not fail the pipeline.

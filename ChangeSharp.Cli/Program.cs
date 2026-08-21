@@ -277,6 +277,23 @@ class Program
             bool allowEmpty = parseResult.GetValue(allowEmptyOption);
             bool requireApproval = parseResult.GetValue(requireApprovalOption);
 
+            if (!dryRun)
+            {
+                try
+                {
+                    var manager = new WorkspaceManager();
+                    if (manager.ShouldDryRunByDefault())
+                    {
+                        dryRun = true;
+                        o.Warn("Security.DryRunByDefault is enabled; running in dry-run mode.");
+                    }
+                }
+                catch (InvalidOperationException ex)
+                {
+                    o.Warn($"Could not read config to check Security.DryRunByDefault: {ex.Message}");
+                }
+            }
+
             if (requireApproval && !dryRun)
             {
                 string? envAllow = Environment.GetEnvironmentVariable("CHANGESHARP_ALLOW_UNSAFE_RELEASE");
