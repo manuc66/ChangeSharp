@@ -479,11 +479,6 @@ $RECYCLE.BIN/
 # MkDocs
 /site/
 
-# CocoIndex
-/cocoindex/.venv/
-/cocoindex/cocoindex.db
-/cocoindex/out/
-
 # Obsidian
 .obsidian/
 /.junie/
