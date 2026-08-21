@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-08-21
+
+### Added
+- Add Snyk badge to README (license and vulnerability scanning)
+- Add CodeFactor badge to README
+
 ## [2.5.0] - 2026-08-21
 
 ### Added
