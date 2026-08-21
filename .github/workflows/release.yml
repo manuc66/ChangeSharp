@@ -1,11 +1,94 @@
 name: Release
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      fragment_count: ${{ steps.plan.outputs.fragment_count }}
+      next_version: ${{ steps.plan.outputs.next_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Pack ChangeSharp CLI
+        run: dotnet pack ChangeSharp.Cli/ChangeSharp.Cli.csproj -o nupkg --nologo
+
+      - name: Install ChangeSharp CLI
+        run: dotnet tool install --global --add-source ./nupkg ChangeSharp.Cli
+
+      - name: Compute release plan
+        id: plan
+        run: |
+          STATUS=$(changesharp status --json)
+          COUNT=$(echo "$STATUS" | jq -r '.data.fragmentCount')
+          NEXT=$(echo "$STATUS" | jq -r '.data.nextVersion')
+          echo "fragment_count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "next_version=$NEXT" >> "$GITHUB_OUTPUT"
+          {
+            echo "status<<CHANGESHARP_EOF"
+            echo "$STATUS"
+            echo "CHANGESHARP_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "fragment_count=$COUNT"
+          echo "next_version=$NEXT"
+          {
+            echo "## Release plan"
+            echo
+            echo "Next version: **$NEXT**"
+            echo
+            echo '```markdown'
+            echo "$STATUS" | jq -r '.data.aggregatedChanges // "No unreleased fragments."'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$COUNT" = "0" ]; then
+            echo "No unreleased fragments. Skipping release."
+          fi
+
+      - name: Validate Release (Dry Run)
+        if: steps.plan.outputs.fragment_count != '0'
+        run: changesharp release --dry-run
+
+      - name: Post release plan for review
+        if: steps.plan.outputs.fragment_count != '0' && github.event_name == 'workflow_dispatch'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const status = JSON.parse(process.env.STATUS_JSON);
+            const body = [
+              `## 🚀 Release plan — ${status.nextVersion}`,
+              ``,
+              `**Fragments to release:** ${status.fragmentCount}`,
+              ``,
+              `### Changes`,
+              ``,
+              status.aggregatedChanges || "*none*",
+              ``,
+              `> Approve the \`release\` environment to publish this version.`
+            ].join('\n');
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body
+            });
+        env:
+          STATUS_JSON: ${{ steps.plan.outputs.status }}
+
   release:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'chore: release')"
+    needs: prepare
+    if: github.event_name == 'workflow_dispatch' && needs.prepare.outputs.fragment_count != '0'
+    environment: release
     permissions:
       contents: write
       id-token: write
@@ -25,48 +108,26 @@ jobs:
       - name: Install ChangeSharp CLI
         run: dotnet tool install --global --add-source ./nupkg ChangeSharp.Cli
 
-      - name: Skip release if no unreleased fragments
-        id: check
-        run: |
-          COUNT=$(changesharp status --json | jq -r '.data.fragmentCount')
-          NEXT=$(changesharp status --next-only)
-          echo "fragment_count=$COUNT" >> "$GITHUB_OUTPUT"
-          echo "next_version=$NEXT" >> "$GITHUB_OUTPUT"
-          echo "fragment_count=$COUNT"
-          echo "next_version=$NEXT"
-          if [ "$COUNT" = "0" ]; then
-            echo "No unreleased fragments. Skipping release."
-          fi
-
-      - name: Validate Release (Dry Run)
-        if: steps.check.outputs.fragment_count != '0'
-        run: changesharp release --dry-run
-
       - name: Perform Release
-        if: steps.check.outputs.fragment_count != '0'
         run: changesharp release
 
       - name: Pack for NuGet
-        if: steps.check.outputs.fragment_count != '0'
         run: |
           dotnet pack ChangeSharp.Cli/ChangeSharp.Cli.csproj -c Release -o nupkg-release --nologo
           dotnet pack ChangeSharp.Mcp/ChangeSharp.Mcp.csproj -c Release -o nupkg-release --nologo
 
       - name: NuGet login (OIDC → temp API key)
-        if: steps.check.outputs.fragment_count != '0'
         uses: NuGet/login@ebc737b6fc418a6ca0073cf116ec8dc156d8b81e # v1
         id: login
         with:
           user: manuc66
 
       - name: Push to NuGet.org
-        if: steps.check.outputs.fragment_count != '0'
         run: dotnet nuget push nupkg-release/*.nupkg --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json
 
       - name: Tag and push release
-        if: steps.check.outputs.fragment_count != '0'
         run: |
-          NEXT_VERSION="${{ steps.check.outputs.next_version }}"
+          NEXT_VERSION="${{ needs.prepare.outputs.next_version }}"
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add .
@@ -75,7 +136,6 @@ jobs:
           git push --atomic origin main v$NEXT_VERSION
 
       - name: Create GitHub release
-        if: steps.check.outputs.fragment_count != '0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

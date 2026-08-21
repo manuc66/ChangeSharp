@@ -113,29 +113,95 @@ To function correctly in CI, ChangeSharp requires:
 name: Release
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
-  release:
+  prepare:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      fragment_count: ${{ steps.plan.outputs.fragment_count }}
+      next_version: ${{ steps.plan.outputs.next_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install ChangeSharp
+        run: dotnet tool install --global ChangeSharp.Cli
+
+      - name: Compute release plan
+        id: plan
+        run: |
+          STATUS=$(changesharp status --json)
+          COUNT=$(echo "$STATUS" | jq -r '.data.fragmentCount')
+          NEXT=$(echo "$STATUS" | jq -r '.data.nextVersion')
+          echo "fragment_count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "next_version=$NEXT" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Release plan"
+            echo
+            echo "Next version: **$NEXT**"
+            echo '```markdown'
+            echo "$STATUS" | jq -r '.data.aggregatedChanges // "No unreleased fragments."'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post release plan for review
+        if: steps.plan.outputs.fragment_count != '0' && github.event_name == 'workflow_dispatch'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = JSON.parse(process.env.STATUS_JSON);
+            const body = [
+              `## 🚀 Release plan — ${status.nextVersion}`,
+              `**Fragments to release:** ${status.fragmentCount}`,
+              `### Changes`,
+              status.aggregatedChanges || "*none*",
+              `> Approve the \`release\` environment to publish this version.`
+            ].join('\n');
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              commit_sha: context.sha, body
+            });
+        env:
+          STATUS_JSON: ${{ steps.plan.outputs.status }}
+
+  release:
+    runs-on: ubuntu-latest
+    needs: prepare
+    if: github.event_name == 'workflow_dispatch' && needs.prepare.outputs.fragment_count != '0'
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
-      - name: Validate Release
-        run: changesharp release --dry-run
-        
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install ChangeSharp
+        run: dotnet tool install --global ChangeSharp.Cli
+
       - name: Perform Release
         run: |
           changesharp release
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add .
-          git commit -m "chore: release $(changesharp status --next-only)"
-          git tag v$(changesharp status --next-only)
-          git push --atomic origin main v$(changesharp status --next-only)
+          git commit -m "chore: release ${{ needs.prepare.outputs.next_version }}"
+          git tag v${{ needs.prepare.outputs.next_version }}
+          git push --atomic origin main v${{ needs.prepare.outputs.next_version }}
 
       - name: Create GitHub release
         env:

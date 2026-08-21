@@ -1,18 +1,53 @@
 name: Release
 on:
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Dry run only (preview without making changes)'
-        required: false
-        default: 'false'
-        type: choice
-        options: ['false', 'true']
+  push:
+    branches: [main]
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      fragment_count: ${{ steps.plan.outputs.fragment_count }}
+      next_version: ${{ steps.plan.outputs.next_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install ChangeSharp
+        run: dotnet tool install --global ChangeSharp.Cli
+
+      - name: Compute release plan
+        id: plan
+        run: |
+          STATUS=$(changesharp status --json)
+          COUNT=$(echo "$STATUS" | jq -r '.data.fragmentCount')
+          NEXT=$(echo "$STATUS" | jq -r '.data.nextVersion')
+          echo "fragment_count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "next_version=$NEXT" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Release plan"
+            echo
+            echo "Next version: **$NEXT**"
+            echo '```markdown'
+            echo "$STATUS" | jq -r '.data.aggregatedChanges // "No unreleased fragments."'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   release:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'chore: release')"
+    needs: prepare
+    if: github.event_name == 'workflow_dispatch' && needs.prepare.outputs.fragment_count != '0'
+    environment: release # requires reviewers in repo settings
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,27 +61,17 @@ jobs:
       - name: Install ChangeSharp
         run: dotnet tool install --global ChangeSharp.Cli
 
-      - name: Validate Release
-        run: changesharp validate --require-fragments
-
-      - name: Dry Run Preview
-        run: changesharp release --dry-run
-
       - name: Perform Release
-        if: inputs.dry_run == 'false'
         run: |
-          NEXT_VERSION=$(changesharp status --next-only)
           changesharp release
-          
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add .
-          git commit -m "chore: release $NEXT_VERSION"
-          git tag v$NEXT_VERSION
-          git push --atomic origin main v$NEXT_VERSION
+          git commit -m "chore: release ${{ needs.prepare.outputs.next_version }}"
+          git tag v${{ needs.prepare.outputs.next_version }}
+          git push --atomic origin main v${{ needs.prepare.outputs.next_version }}
 
       - name: Create GitHub release
-        if: inputs.dry_run == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

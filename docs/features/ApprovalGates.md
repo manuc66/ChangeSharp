@@ -23,6 +23,17 @@ When running in an automated environment, ChangeSharp can be set to require an e
 - **MCP Integration**: The `perform_release` tool will fail if an AI agent attempts to run it without the `dryRun: true` parameter, unless an environment variable `CHANGESHARP_ALLOW_UNSAFE_RELEASE=true` is explicitly set in the server configuration.
 - **Human-in-the-loop**: The recommended workflow is for the AI agent to propose a release via `dry-run`, and then a human triggers the final pipeline step in the CI/CD UI (e.g., GitHub Actions environment approval).
 
+### 3. Protected CI Environment with Required Reviewers (Recommended)
+
+A `workflow_dispatch` trigger alone is not a real review — clicking "Run workflow" does not force anyone to look at what will be released. To make the human-in-the-loop gate meaningful on GitHub, use a **protected environment** with **required reviewers**, split into two jobs:
+
+1.  `prepare` — runs on **every push to `main`** and on manual dispatch. It computes the release plan (next version + aggregated changelog segment) and surfaces it:
+    - on push: as the run's **job summary** (always visible in Actions);
+    - on manual dispatch: as a **commit comment** with the full plan.
+2.  `release` — **manual only** (`workflow_dispatch`), `environment: release` with **required reviewers**, and `needs: prepare`. The run pauses at the environment gate; a human reviews the plan comment and explicitly **approves** before release + NuGet push + tag + GitHub release happen.
+
+GitHub setup (one time): **Settings → Environments → New environment → `release` → Protection rules → Required reviewers** (add yourself/team). A dispatch run with fragments then waits for your approval.
+
 ## 🧩 AI Agent Workflow with Gates
 
 1.  **Agent**: "I've finished the feature. I'll prepare a release."
