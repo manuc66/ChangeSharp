@@ -82,19 +82,33 @@ class Program
         var securityOption   = new Option<bool>("--security")   { Description = "Mark change as Security." };
         var breakingOption   = new Option<bool>("--breaking")   { Description = "Mark change as Breaking Changes." };
 
+        var fileOption = new Option<string>("--file") { Description = "Read the change description from a file instead of the message argument, stdin, or a prompt." };
+
         var newCommand = new Command("new", "Create a new unreleased changelog fragment.")
         {
             messageArgument, addedOption, changedOption, fixedOption,
             removedOption, deprecatedOption, securityOption, breakingOption,
-            jsonOption,
+            fileOption, jsonOption,
         };
 
         newCommand.SetAction(parseResult =>
         {
             var o = Out(parseResult, jsonOption);
             string? message = parseResult.GetValue(messageArgument);
-            if (string.IsNullOrWhiteSpace(message))
-                message = PromptForMessage();
+
+            string? messageFile = parseResult.GetValue(fileOption);
+            if (messageFile != null)
+            {
+                if (!File.Exists(messageFile))
+                    return o.Err($"File not found: {messageFile}", ExitCodeGenericError);
+                message = File.ReadAllText(messageFile).Trim();
+            }
+            else if (string.IsNullOrWhiteSpace(message))
+            {
+                message = Console.IsInputRedirected
+                    ? Console.In.ReadToEnd().Trim()
+                    : PromptForMessage();
+            }
 
             if (string.IsNullOrWhiteSpace(message))
                 return o.Err("Description is required.", ExitCodeValidationError);
