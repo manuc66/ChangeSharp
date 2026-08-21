@@ -90,6 +90,16 @@ public class GetNextSemanticVersionTests
     }
 
     [Test]
+    public void ComputeVersion_NoChanges_ReturnsCurrentVersion()
+    {
+        var changeSet = new ChangeSet();
+
+        string nextVersion = NextVersionComputer.ComputeVersion("2.3.0", changeSet);
+
+        Assert.That(nextVersion, Is.EqualTo("2.3.0"));
+    }
+
+    [Test]
     public void ComputeVersionWithWarning_InvalidVersion_ReturnsWarning()
     {
         var changeSet = new ChangeSet();

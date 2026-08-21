@@ -624,4 +624,31 @@ public class WorkspaceManagerTests
 
         Assert.That(count, Is.EqualTo(0));
     }
+
+    [Test]
+    public void GetStatus_NoFragments_NextVersionEqualsCurrent()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+
+        manager.GetStatus(out int count, out _, out string current, out string next);
+
+        Assert.That(count, Is.EqualTo(0));
+        Assert.That(next, Is.EqualTo(current));
+    }
+
+    [Test]
+    public void GetStatus_AfterRelease_NextVersionEqualsCurrent()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        manager.CreateFragment("Added a feature", "Added");
+        manager.Release(DateTime.Today);
+
+        manager.GetStatus(out int count, out _, out string current, out string next);
+
+        Assert.That(count, Is.EqualTo(0));
+        Assert.That(current, Is.EqualTo("0.1.0"));
+        Assert.That(next, Is.EqualTo("0.1.0"));
+    }
 }

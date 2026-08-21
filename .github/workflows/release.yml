@@ -29,21 +29,24 @@ jobs:
       - name: Skip release if no unreleased fragments
         id: check
         run: |
+          COUNT=$(changesharp status --json | jq -r '.data.fragmentCount')
           NEXT=$(changesharp status --next-only)
+          echo "fragment_count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "next_version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "fragment_count=$COUNT"
           echo "next_version=$NEXT"
-          if [ "$NEXT" = "0.0.0" ]; then
+          if [ "$COUNT" = "0" ]; then
             echo "No unreleased fragments. Skipping release."
           fi
 
       - name: Validate Release (Dry Run)
-        if: steps.check.outputs.next_version != '0.0.0'
+        if: steps.check.outputs.fragment_count != '0'
         run: changesharp release --dry-run
 
       - name: Perform Release
-        if: steps.check.outputs.next_version != '0.0.0'
+        if: steps.check.outputs.fragment_count != '0'
         run: |
-          NEXT_VERSION=$(changesharp status --next-only)
+          NEXT_VERSION="${{ steps.check.outputs.next_version }}"
           changesharp release
 
           git config user.name "github-actions"
