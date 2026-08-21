@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-08-21
+
+### Added
+- Honor Security.DryRunByDefault config in the CLI release command (default to dry-run when enabled)
+
+### Fixed
+- Align docs with implementation: API surface gate is CI-driven, fragments are deleted (not archived) after release, config keys use PascalCase, monorepo marked as roadmap
+
 ## [2.1.0] - 2026-08-21
 
 ### Added
