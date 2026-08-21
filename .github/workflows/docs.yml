@@ -25,7 +25,7 @@ jobs:
 
       - name: Build docs
         run: |
-          pip install --only-binary :all: --requirement requirements.txt
+          pip install --only-binary :all: --require-hashes --requirement requirements.txt
           mkdocs build
 
       - name: Upload artifact
