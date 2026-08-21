@@ -46,17 +46,7 @@ jobs:
 
       - name: Perform Release
         if: steps.check.outputs.fragment_count != '0'
-        run: |
-          NEXT_VERSION="${{ steps.check.outputs.next_version }}"
-          changesharp release
-
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add .
-          git commit -m "chore: release $NEXT_VERSION"
-          git push
-          git tag v$NEXT_VERSION
-          git push --tags
+        run: changesharp release
 
       - name: Pack for NuGet
         if: steps.check.outputs.fragment_count != '0'
@@ -69,8 +59,20 @@ jobs:
         uses: NuGet/login@ebc737b6fc418a6ca0073cf116ec8dc156d8b81e # v1
         id: login
         with:
-          user: ${{ vars.NUGET_USER }}
+          user: manuc66
 
       - name: Push to NuGet.org
         if: steps.check.outputs.fragment_count != '0'
         run: dotnet nuget push nupkg-release/*.nupkg --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json
+
+      - name: Tag and push release
+        if: steps.check.outputs.fragment_count != '0'
+        run: |
+          NEXT_VERSION="${{ steps.check.outputs.next_version }}"
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add .
+          git commit -m "chore: release $NEXT_VERSION"
+          git push
+          git tag v$NEXT_VERSION
+          git push --tags
