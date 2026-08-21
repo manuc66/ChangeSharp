@@ -2,6 +2,8 @@
 
 Derive the version. Keep a Changelog.
 
+[![CI](https://github.com/manuc66/ChangeSharp/actions/workflows/dotnet.yml/badge.svg)](https://github.com/manuc66/ChangeSharp/actions/workflows/dotnet.yml) [![Code Coverage](https://codecov.io/gh/manuc66/ChangeSharp/branch/main/graph/badge.svg)](https://codecov.io/gh/manuc66/ChangeSharp) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=manuc66_ChangeSharp&metric=alert_status)](https://sonarcloud.io/dashboard?id=manuc66_ChangeSharp) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=manuc66_ChangeSharp&metric=coverage)](https://sonarcloud.io/dashboard?id=manuc66_ChangeSharp)
+
 A .NET tool for changelog-driven semantic versioning.
 
 ## Quick start

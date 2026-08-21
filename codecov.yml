@@ -1,0 +1,19 @@
+# Codecov configuration.
+#
+# Test projects and CI artifacts are not a meaningful project-level coverage metric,
+# so they are excluded from the Codecov project and patch checks.
+
+ignore:
+  - "**/*Tests*/**"
+  - "**/obj/**"
+  - "**/bin/**"
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 5%
+    patch:
+      default:
+        target: 80%

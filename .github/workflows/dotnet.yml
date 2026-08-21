@@ -24,8 +24,18 @@ jobs:
     - name: Build
       run: dotnet build --no-restore --nologo
 
-    - name: Test
-      run: dotnet test --no-build --nologo
+    - name: Test with coverage
+      run: dotnet test --no-build --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
+
+    - name: Install gpg (required by codecov-action v5)
+      run: sudo apt-get install -y gpg
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: TestResults/**/coverage.cobertura.xml
+        fail_ci_if_error: true
 
     - name: Pack ChangeSharp CLI
       run: dotnet pack ChangeSharp.Cli/ChangeSharp.Cli.csproj -o nupkg --nologo
@@ -40,3 +50,56 @@ jobs:
     - name: Validate fragments (push to main — no require)
       if: github.event_name == 'push'
       run: changesharp validate
+
+  analysis:
+    # SonarCloud analyzes both main pushes and pull requests. For PRs the scanner
+    # needs the pull-request parameters plus GITHUB_TOKEN (used to decorate the PR
+    # with the quality gate). The job-level `if` avoids referencing the secret in a
+    # step-level `if`, which broke workflow startup before (secrets are not allowed
+    # in `if:` conditions).
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install SonarScanner for .NET
+        run: dotnet tool install --global dotnet-sonarscanner --version 11.2.1
+
+      # The generic sonarcloud-github-action cannot analyze C#; only the
+      # SonarScanner for .NET can. Per Sonar's docs, the coverage report must be
+      # produced in the same job as the scan (between begin and end), so this job
+      # builds and tests the solution itself rather than reusing the build job's
+      # reports (whose relative file paths would not resolve here).
+      - name: Begin SonarCloud analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          PR_KEY: ${{ github.event.pull_request.number }}
+          PR_BRANCH: ${{ github.head_ref }}
+          PR_BASE: ${{ github.base_ref }}
+        run: |
+          pr_args=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            pr_args="/d:sonar.pullrequest.key=$PR_KEY /d:sonar.pullrequest.branch=$PR_BRANCH /d:sonar.pullrequest.base=$PR_BASE"
+          fi
+          dotnet-sonarscanner begin /k:manuc66_ChangeSharp /o:manuc66-github /d:sonar.token="$SONAR_TOKEN" /d:sonar.host.url=https://sonarcloud.io /d:sonar.cs.cobertura.reportsPaths=TestResults/**/coverage.cobertura.xml /d:sonar.exclusions=**/*Tests*/** $pr_args
+
+      - name: Build for SonarCloud analysis
+        run: dotnet build ChangeSharp.sln -c Release --nologo
+
+      - name: Test with coverage
+        run: dotnet test ChangeSharp.sln -c Release --no-build --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
+
+      - name: End SonarCloud analysis
+        run: dotnet-sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
