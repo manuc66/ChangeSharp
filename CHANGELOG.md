@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-21
+
+### Added
+- Add a CocoIndex pipeline (cocoindex/) that incrementally indexes docs/ into searchable sections
+
 ## [2.2.0] - 2026-08-21
 
 ### Added
