@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-08-21
+
+### Fixed
+- Add explicit permissions block to the build job (CodeQL missing-workflow-permissions)
+
 ## [2.6.0] - 2026-08-21
 
 ### Added
