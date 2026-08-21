@@ -367,9 +367,10 @@ class Program
         });
         rootCommand.Add(releaseCommand);
 
-        var publishCommand = new Command("publish", "Output the latest released version and its changelog segment (for creating a forge release).")
+        var versionOption = new Option<string>("--version") { Description = "Specific released version to output (default: latest)." };
+        var publishCommand = new Command("publish", "Output a released version and its changelog segment (for creating a forge release).")
         {
-            jsonOption
+            versionOption, jsonOption
         };
         publishCommand.SetAction(parseResult =>
         {
@@ -377,7 +378,10 @@ class Program
             try
             {
                 var manager = new WorkspaceManager();
-                var (version, body) = manager.GetLatestRelease();
+                string? requestedVersion = parseResult.GetValue(versionOption);
+                var (version, body) = requestedVersion != null
+                    ? manager.GetVersionRelease(requestedVersion)
+                    : manager.GetLatestRelease();
                 return o.Ok(new { version, tag = $"v{version}", title = version, body },
                     () =>
                     {

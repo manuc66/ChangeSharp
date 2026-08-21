@@ -559,7 +559,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
             throw new InvalidOperationException("No released version found in the changelog.");
         }
 
-        return (version, changeLog.GetVersionContent(version) ?? "");
+        return GetVersionRelease(version);
+    }
+
+    public (string Version, string Body) GetVersionRelease(string version)
+    {
+        var config = LoadConfig();
+        string changelogPath = Path.Combine(_basePath, config.ChangelogPath);
+        if (!File.Exists(changelogPath))
+        {
+            throw new InvalidOperationException($"Changelog not found at '{changelogPath}'.");
+        }
+
+        var changeLog = new ChangeLog(File.ReadAllText(changelogPath, Encoding.UTF8));
+        string? body = changeLog.GetVersionContent(version);
+        if (body == null)
+        {
+            throw new InvalidOperationException($"Version '{version}' not found in the changelog.");
+        }
+
+        return (version, body);
     }
 
     private string GetDefaultChangelog()

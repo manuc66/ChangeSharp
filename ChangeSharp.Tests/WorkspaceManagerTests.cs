@@ -688,4 +688,33 @@ public class WorkspaceManagerTests
         var ex = Assert.Throws<InvalidOperationException>(() => manager.GetLatestRelease());
         Assert.That(ex.Message, Does.Contain("No released version"));
     }
+
+    [Test]
+    public void GetVersionRelease_SpecificVersion_ReturnsSegment()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        manager.CreateFragment("First feature", "Added");
+        manager.Release(DateTime.Today);
+        manager.CreateFragment("Second feature", "Added");
+        manager.Release(DateTime.Today);
+
+        var (version, body) = manager.GetVersionRelease("0.1.0");
+
+        Assert.That(version, Is.EqualTo("0.1.0"));
+        Assert.That(body, Does.Contain("- First feature"));
+        Assert.That(body, Does.Not.Contain("- Second feature"));
+    }
+
+    [Test]
+    public void GetVersionRelease_UnknownVersion_Throws()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        manager.CreateFragment("Added a feature", "Added");
+        manager.Release(DateTime.Today);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => manager.GetVersionRelease("9.9.9"));
+        Assert.That(ex.Message, Does.Contain("not found in the changelog"));
+    }
 }
