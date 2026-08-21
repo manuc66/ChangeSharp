@@ -162,6 +162,12 @@ ChangeSharp.MCP    → AI/tooling adapter (Interface only)
     * Conduct benchmarks on merge conflict reduction in multi-developer teams.
     * Track "Version Accuracy" (declared vs. actual API impact) using the Syntactic Safety Gate.
 
+### Step 20: CLI & MCP Test Coverage (Priority 3)
+* **Goal**: Extend unit coverage to the `ChangeSharp.Cli` and `ChangeSharp.Mcp` entry points (currently exercised only via the library layer).
+* **Actions**:
+    * Expose `Program` to the test project (`InternalsVisibleTo`) and invoke `Program.Main` with captured `Console` output.
+    * Assert the `--json` payload shapes and exit codes for each command (init, new, status, validate, release, publish, prerelease, remove).
+
 ---
 
 ### Future Expansion: Polyglot Support

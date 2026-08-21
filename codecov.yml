@@ -7,8 +7,6 @@ ignore:
   - "**/*Tests*/**"
   - "**/obj/**"
   - "**/bin/**"
-  - "ChangeSharp.Cli/**"
-  - "ChangeSharp.Mcp/**"
 
 coverage:
   status:
@@ -18,4 +16,4 @@ coverage:
         threshold: 5%
     patch:
       default:
-        target: 80%
+        target: 70%
