@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-08-21
+
+### Added
+- Add SonarCloud analysis and Codecov coverage upload to the CI workflow
+
+### Fixed
+- Release workflow skipped only when no unreleased fragments exist (gate on fragment count, not the 0.0.0 sentinel)
+
 ## [2.3.0] - 2026-08-21
 
 ### Added
