@@ -33,7 +33,7 @@ To build a reliable MVP, we will prioritize robust parsing, extensible configura
 
 ### Step 6: GitHub & GitLab CI/CD Integration (Completed)
 * Created sample workflow files (`samples/ci/github-release.yml` for GitHub, `samples/ci/.gitlab-ci.yml` for GitLab) to automate the release process.
-* **Focus**: Enable a standard "Release on Merge" or "Release on Tag" pipeline that is easy to adopt for DevOps engineers.
+* **Focus**: Enable a standard "Release on Merge", "Release on Tag", or **on-demand** (`workflow_dispatch` / `when: manual`) pipeline that is easy to adopt for DevOps engineers. The recommended setup triggers the release manually from the current state of `main`.
 * Added `--next-only` and `--require-fragments` CLI options for better CI integration.
 
 ### Step 7: Pre-release Channels and Branch-based Versioning (Completed)
