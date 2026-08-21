@@ -611,26 +611,78 @@ class Program
 
     private static string PromptForCategory()
     {
-        Console.WriteLine("Select a category for the change:");
-        Console.WriteLine("1. Added (New feature)");
-        Console.WriteLine("2. Changed (Modification of existing feature)");
-        Console.WriteLine("3. Fixed (Bug fix)");
-        Console.WriteLine("4. Removed (Removal of a feature)");
-        Console.WriteLine("5. Deprecated (Future removal warning)");
-        Console.WriteLine("6. Security (Security improvement)");
-        Console.WriteLine("7. Breaking Changes (Backward incompatible change)");
-        Console.Write("Selection (1-7, default 1): ");
-
-        return Console.ReadLine() switch
+        var categories = new (string Name, string Description)[]
         {
-            "2" => "Changed",
-            "3" => "Fixed",
-            "4" => "Removed",
-            "5" => "Deprecated",
-            "6" => "Security",
-            "7" => "Breaking Changes",
-            _ => "Added"
+            ("Added", "New feature"),
+            ("Changed", "Modification of an existing feature (backward-incompatible)"),
+            ("Fixed", "Bug fix"),
+            ("Removed", "Removal of a feature"),
+            ("Deprecated", "Future removal warning"),
+            ("Security", "Security improvement"),
+            ("Breaking Changes", "Backward-incompatible change")
         };
+
+        Dictionary<string, string>? impacts = null;
+        try
+        {
+            impacts = new WorkspaceManager().LoadConfig().SemverPolicy.Mappings;
+        }
+        catch
+        {
+            // impact display is best-effort
+        }
+
+        int selected = 0;
+        Console.WriteLine("Select a category (↑/↓ to navigate, Enter to confirm, Esc to cancel, 1-7 to jump):");
+        while (true)
+        {
+            for (int i = 0; i < categories.Length; i++)
+            {
+                Console.CursorLeft = 0;
+                string impact = impacts != null && impacts.TryGetValue(categories[i].Name, out var v) ? $" ({v})" : "";
+                if (i == selected)
+                {
+                    Console.Write("> ");
+                    Console.BackgroundColor = ConsoleColor.DarkBlue;
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.Write(categories[i].Name.PadRight(18));
+                    Console.ResetColor();
+                    Console.WriteLine($"{impact} — {categories[i].Description}");
+                }
+                else
+                {
+                    Console.WriteLine($"  {categories[i].Name.PadRight(18)}{impact} — {categories[i].Description}");
+                }
+            }
+
+            var key = Console.ReadKey(true);
+            if (key.Key == ConsoleKey.UpArrow && selected > 0)
+            {
+                selected--;
+            }
+            else if (key.Key == ConsoleKey.DownArrow && selected < categories.Length - 1)
+            {
+                selected++;
+            }
+            else if (key.Key == ConsoleKey.Enter)
+            {
+                break;
+            }
+            else if (key.Key == ConsoleKey.Escape)
+            {
+                selected = 0;
+                break;
+            }
+            else if (key.Key >= ConsoleKey.D1 && key.Key <= ConsoleKey.D7)
+            {
+                selected = key.Key - ConsoleKey.D1;
+                break;
+            }
+
+            Console.CursorTop -= categories.Length;
+        }
+
+        return categories[selected].Name;
     }
 }
 
