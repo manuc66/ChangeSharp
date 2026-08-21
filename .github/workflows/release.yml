@@ -26,10 +26,22 @@ jobs:
       - name: Install ChangeSharp CLI
         run: dotnet tool install --global --add-source ./nupkg ChangeSharp.Cli
 
+      - name: Skip release if no unreleased fragments
+        id: check
+        run: |
+          NEXT=$(changesharp status --next-only)
+          echo "next_version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "next_version=$NEXT"
+          if [ "$NEXT" = "0.0.0" ]; then
+            echo "No unreleased fragments. Skipping release."
+          fi
+
       - name: Validate Release (Dry Run)
+        if: steps.check.outputs.next_version != '0.0.0'
         run: changesharp release --dry-run
 
       - name: Perform Release
+        if: steps.check.outputs.next_version != '0.0.0'
         run: |
           NEXT_VERSION=$(changesharp status --next-only)
           changesharp release
