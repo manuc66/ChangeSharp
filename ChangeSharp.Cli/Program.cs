@@ -134,6 +134,10 @@ class Program
                          : security ? "Security"
                          : "Added";
             }
+            else if (Console.IsInputRedirected)
+            {
+                return o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
+            }
             else
             {
                 category = PromptForCategory();
