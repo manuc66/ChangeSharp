@@ -129,7 +129,8 @@ public class ChangeLog
         if (lastReleaseLine != null)
         {
             // Extract version from ## [version] - date
-            var match = System.Text.RegularExpressions.Regex.Match(lastReleaseLine, @"##\s*\[(.*?)\]");
+            var match = System.Text.RegularExpressions.Regex.Match(
+                lastReleaseLine, @"##\s*\[(.*?)\]", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(5));
             if (match.Success)
             {
                 tempLastRelease = match.Groups[1].Value;

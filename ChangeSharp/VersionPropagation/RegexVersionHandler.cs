@@ -4,6 +4,13 @@ namespace ChangeSharp.VersionPropagation;
 
 public class RegexVersionHandler : IVersionPropagationHandler
 {
+    private readonly TimeSpan _matchTimeout;
+
+    public RegexVersionHandler(TimeSpan? matchTimeout = null)
+    {
+        _matchTimeout = matchTimeout ?? TimeSpan.FromSeconds(5);
+    }
+
     public bool CanHandle(VersionTargetConfig target)
     {
         return target.Type?.Equals("regex", StringComparison.OrdinalIgnoreCase) == true || 
@@ -21,11 +28,19 @@ public class RegexVersionHandler : IVersionPropagationHandler
 
         string content = File.ReadAllText(fullPath);
 
-        string updated = Regex.Replace(content, target.Regex, m =>
+        string updated;
+        try
         {
-            string replacement = target.Replacement ?? "$VERSION";
-            return replacement.Replace("$VERSION", nextVersion);
-        });
+            updated = Regex.Replace(content, target.Regex, m =>
+            {
+                string replacement = target.Replacement ?? "$VERSION";
+                return replacement.Replace("$VERSION", nextVersion);
+            }, RegexOptions.None, _matchTimeout);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return $"Regex target '{target.Path}' timed out.";
+        }
 
         File.WriteAllText(fullPath, updated);
         return null;

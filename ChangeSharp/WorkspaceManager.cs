@@ -9,6 +9,23 @@ public class WorkspaceManager
 {
     private readonly string _basePath;
     private const string ConfigFileName = "changesharp.json";
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
+    private static readonly string GitExecutable = ResolveGitExecutable();
+
+    private static string ResolveGitExecutable()
+    {
+        string fileName = OperatingSystem.IsWindows() ? "git.exe" : "git";
+        string? pathValue = Environment.GetEnvironmentVariable("PATH");
+        if (pathValue != null)
+        {
+            foreach (string dir in pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string candidate = Path.Combine(dir, fileName);
+                if (File.Exists(candidate)) return candidate;
+            }
+        }
+        return fileName;
+    }
 
     public WorkspaceManager(string? basePath = null)
     {
@@ -327,7 +344,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         {
             var startInfo = new System.Diagnostics.ProcessStartInfo
             {
-                FileName = "git",
+                FileName = GitExecutable,
                 Arguments = "rev-parse --abbrev-ref HEAD",
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
@@ -776,7 +793,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         {
             var startInfo = new System.Diagnostics.ProcessStartInfo
             {
-                FileName = "git",
+                FileName = GitExecutable,
                 Arguments = "rev-parse --abbrev-ref HEAD",
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
@@ -809,10 +826,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         if (!preReleaseConfig.SanitizeBranchName) return branchName;
 
         // Replace / and other non-alphanumeric with hyphens
-        string sanitized = Regex.Replace(branchName, @"[^a-zA-Z0-9]", "-");
+        string sanitized = Regex.Replace(branchName, @"[^a-zA-Z0-9]", "-", RegexOptions.None, RegexTimeout);
         
         // Remove duplicate hyphens
-        sanitized = Regex.Replace(sanitized, @"-+", "-").Trim('-');
+        sanitized = Regex.Replace(sanitized, @"-+", "-", RegexOptions.None, RegexTimeout).Trim('-');
 
         if (sanitized.Length > preReleaseConfig.MaxIdentifierLength)
         {
@@ -826,9 +843,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     {
         string normalized = text.ToLowerInvariant();
         // Replace non-alphanumeric characters with hyphens
-        normalized = Regex.Replace(normalized, @"[^a-z0-9\s-]", "");
+        normalized = Regex.Replace(normalized, @"[^a-z0-9\s-]", "", RegexOptions.None, RegexTimeout);
         // Replace multiple spaces/hyphens with a single hyphen
-        normalized = Regex.Replace(normalized, @"[\s-]+", "-").Trim('-');
+        normalized = Regex.Replace(normalized, @"[\s-]+", "-", RegexOptions.None, RegexTimeout).Trim('-');
         
         if (normalized.Length > 50)
         {

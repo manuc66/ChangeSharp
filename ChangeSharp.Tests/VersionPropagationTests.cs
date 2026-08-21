@@ -202,4 +202,19 @@ public class VersionPropagationTests
         string updated = File.ReadAllText(txtPath);
         Assert.That(updated, Is.EqualTo("[assembly: AssemblyVersion(\"2.0.0\")]"));
     }
+
+    [Test]
+    public void RegexHandler_PathologicalPattern_TimesOutAndReturnsWarning()
+    {
+        string txtPath = Path.Combine(_tempPath, "version.txt");
+        File.WriteAllText(txtPath, new string('a', 30) + "b");
+
+        var handler = new RegexVersionHandler(TimeSpan.FromMilliseconds(1));
+        var target = new VersionTargetConfig { Path = "version.txt", Regex = "(a+)+$" };
+
+        string? warning = handler.UpdateVersion(_tempPath, target, "1.1.0");
+
+        Assert.That(warning, Is.Not.Null);
+        Assert.That(warning, Does.Contain("timed out"));
+    }
 }
