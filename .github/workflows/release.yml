@@ -10,6 +10,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'chore: release')"
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,3 +57,20 @@ jobs:
           git push
           git tag v$NEXT_VERSION
           git push --tags
+
+      - name: Pack for NuGet
+        if: steps.check.outputs.fragment_count != '0'
+        run: |
+          dotnet pack ChangeSharp.Cli/ChangeSharp.Cli.csproj -c Release -o nupkg-release --nologo
+          dotnet pack ChangeSharp.Mcp/ChangeSharp.Mcp.csproj -c Release -o nupkg-release --nologo
+
+      - name: NuGet login (OIDC → temp API key)
+        if: steps.check.outputs.fragment_count != '0'
+        uses: NuGet/login@ebc737b6fc418a6ca0073cf116ec8dc156d8b81e # v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push to NuGet.org
+        if: steps.check.outputs.fragment_count != '0'
+        run: dotnet nuget push nupkg-release/*.nupkg --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json
