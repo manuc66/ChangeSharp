@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-08-21
+
+### Added
+- Publish ChangeSharp tools to NuGet.org via the Trusted Publishing (OIDC) flow
+
 ## [2.6.1] - 2026-08-21
 
 ### Fixed
