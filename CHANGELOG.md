@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.1] - 2026-08-21
+
+### Fixed
+- Push NuGet packages before creating the git release commit/tag so a failed publish does not leave a release without packages
+
 ## [2.7.0] - 2026-08-21
 
 ### Added
