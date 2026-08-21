@@ -7,6 +7,8 @@ ignore:
   - "**/*Tests*/**"
   - "**/obj/**"
   - "**/bin/**"
+  - "ChangeSharp.Cli/**"
+  - "ChangeSharp.Mcp/**"
 
 coverage:
   status:
