@@ -1,0 +1,58 @@
+site_name: ChangeSharp
+site_description: A .NET tool for changelog-driven semantic versioning.
+site_url: https://manuc66.github.io/ChangeSharp/
+repo_url: https://github.com/manuc66/ChangeSharp
+repo_name: ChangeSharp
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - wikilinks:
+      base_url: .
+      end_url: /
+
+nav:
+  - Home: ChangeSharp.md
+  - Guide:
+      - SemVer Rules: "SemVer Rules.md"
+      - Fragment Naming: FragmentNaming.md
+      - Frictionless Workflow: FrictionlessWorkflow.md
+      - Migration Guide: Migration.md
+      - Exit Codes: ExitCodes.md
+  - Features:
+      - CI/CD Integration: features/CiIntegration.md
+      - Api Surface Gate: features/ApiSurfaceGate.md
+      - Approval Gates: features/ApprovalGates.md
+      - Custom Categories: features/CustomCategories.md
+      - Monorepo Support: features/MonorepoSupport.md
+      - Pre-releases: features/Prereleases.md
+      - Continuous Discovery: features/ContinuousDiscovery.md
+  - Development:
+      - Architecture: Architecture.md
+      - Roadmap: Roadmap.md
+      - Code Review: CodeReview.md
+      - Audit Plan: AuditPlan.md
+  - MCP:
+      - MCP Integration: McpIntegration.md

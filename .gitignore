@@ -476,6 +476,9 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+# MkDocs
+/site/
+
 # Obsidian
 .obsidian/
 /.junie/
