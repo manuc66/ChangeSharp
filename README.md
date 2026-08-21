@@ -13,8 +13,20 @@ dotnet tool install --global ChangeSharp.Cli
 cd your-project
 changesharp init
 changesharp new --added "Initial setup"
-changesharp release
+changesharp release        # updates CHANGELOG.md and version files (locally)
 ```
+
+`changesharp release` only updates the files — you still need to commit, tag, and publish the release on your forge:
+
+```bash
+git add . && git commit -m "chore: release 0.1.0"
+git tag v0.1.0
+git push --atomic origin main v0.1.0
+gh release create v0.1.0 --title 0.1.0 \
+  --notes "$(changesharp publish --json | jq -r '.data.body')"
+```
+
+`changesharp publish` outputs the released version and its changelog segment, ready to feed any forge's release tool (`gh`, `glab`, …).
 
 ## Documentation
 
