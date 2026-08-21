@@ -36,6 +36,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Guide:
+      - Getting Started: getting-started.md
       - SemVer Rules: "SemVer Rules.md"
       - Fragment Naming: FragmentNaming.md
       - Frictionless Workflow: FrictionlessWorkflow.md
