@@ -367,6 +367,30 @@ class Program
         });
         rootCommand.Add(releaseCommand);
 
+        var publishCommand = new Command("publish", "Output the latest released version and its changelog segment (for creating a forge release).")
+        {
+            jsonOption
+        };
+        publishCommand.SetAction(parseResult =>
+        {
+            var o = Out(parseResult, jsonOption);
+            try
+            {
+                var manager = new WorkspaceManager();
+                var (version, body) = manager.GetLatestRelease();
+                return o.Ok(new { version, tag = $"v{version}", title = version, body },
+                    () =>
+                    {
+                        Console.WriteLine($"Version: {version}");
+                        Console.WriteLine($"Tag: v{version}");
+                        Console.WriteLine();
+                        Console.WriteLine(body);
+                    });
+            }
+            catch (Exception ex) { return o.Err(ex.Message); }
+        });
+        rootCommand.Add(publishCommand);
+
         var branchOption  = new Option<string>("--branch") { Description = "Specific branch name to use for pre-release." };
         var listOption    = new Option<bool>("--list") { Description = "List all active pre-releases." };
         var promoteOption = new Option<bool>("--promote") { Description = "Promote the latest pre-release to a final release." };

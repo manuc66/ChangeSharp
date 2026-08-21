@@ -651,4 +651,41 @@ public class WorkspaceManagerTests
         Assert.That(current, Is.EqualTo("0.1.0"));
         Assert.That(next, Is.EqualTo("0.1.0"));
     }
+
+    [Test]
+    public void GetLatestRelease_AfterRelease_ReturnsVersionAndSegment()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        manager.CreateFragment("Added a feature", "Added");
+        manager.CreateFragment("Fixed a bug", "Fixed");
+        manager.Release(DateTime.Today);
+
+        var (version, body) = manager.GetLatestRelease();
+
+        Assert.That(version, Is.EqualTo("0.1.0"));
+        Assert.That(body, Does.Contain("### Added"));
+        Assert.That(body, Does.Contain("- Added a feature"));
+        Assert.That(body, Does.Contain("- Fixed a bug"));
+    }
+
+    [Test]
+    public void GetLatestRelease_NoChangelog_Throws()
+    {
+        var manager = new WorkspaceManager(_testDir);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => manager.GetLatestRelease());
+        Assert.That(ex.Message, Does.Contain("Changelog not found"));
+    }
+
+    [Test]
+    public void GetLatestRelease_OnlyUnreleased_Throws()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        manager.CreateFragment("Added a feature", "Added");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => manager.GetLatestRelease());
+        Assert.That(ex.Message, Does.Contain("No released version"));
+    }
 }

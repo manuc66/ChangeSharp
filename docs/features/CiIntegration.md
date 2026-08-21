@@ -51,7 +51,46 @@ See `samples/ci/github-bot.yml` for a full implementation.
         - Stages fragments in `.changesharp/releasing/`, then deletes them after a successful release.
     4.  **Git Tag & Push**: (Scripted)
         - `git add . && git commit -m "chore: release v1.2.0"`
-        - `git tag v1.2.0 && git push --follow-tags`
+        - `git tag v1.2.0 && git push --atomic origin main v1.2.0` (commit + tag poussés atomiquement)
+    5.  **Forge Release** (Optional): `changesharp publish`
+        - Outputs the latest released version, its tag, and the corresponding changelog segment so the CI can create a release on the forge (GitHub, GitLab, …).
+        - ChangeSharp only produces the payload; each forge's own tool does the release creation ("each tool does what it does well").
+
+### `changesharp publish`
+
+Reads `CHANGELOG.md` and outputs the most recent released version and its changelog segment. The output is forge-agnostic: the CI pipes it into the forge's release tool.
+
+```bash
+# Human-readable
+changesharp publish
+# Machine-readable (for CI)
+changesharp publish --json
+```
+
+`--json` output shape:
+
+```json
+{
+  "success": true,
+  "data": {
+    "version": "1.2.0",
+    "tag": "v1.2.0",
+    "title": "1.2.0",
+    "body": "### Added\n- New feature"
+  }
+}
+```
+
+**GitHub** example (`gh`):
+
+```bash
+PAYLOAD=$(changesharp publish --json)
+VERSION=$(echo "$PAYLOAD" | jq -r '.data.version')
+BODY=$(echo "$PAYLOAD" | jq -r '.data.body')
+gh release create "v$VERSION" --title "$VERSION" --notes "$BODY"
+```
+
+The same payload feeds `glab release create` on GitLab, `curl` to the GitLab/API, etc. Because the release is created as the **last** step of the CI pipeline, it only happens if everything before it succeeded.
 
 ---
 
@@ -79,6 +118,8 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,9 +135,17 @@ jobs:
           git config user.email "github-actions@github.com"
           git add .
           git commit -m "chore: release $(changesharp status --next-only)"
-          git push
           git tag v$(changesharp status --next-only)
-          git push --tags
+          git push --atomic origin main v$(changesharp status --next-only)
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PAYLOAD=$(changesharp publish --json)
+          VERSION=$(echo "$PAYLOAD" | jq -r '.data.version')
+          BODY=$(echo "$PAYLOAD" | jq -r '.data.body')
+          gh release create "v$VERSION" --title "$VERSION" --notes "$BODY"
 ```
 
 ---

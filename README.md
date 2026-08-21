@@ -23,7 +23,7 @@ See the [documentation site](https://manuc66.github.io/ChangeSharp/) — quick s
 ## Features
 
 - **Changelog-driven versioning** — fragments in `.changesharp/unreleased/` drive SemVer bumps
-- **CI/CD integration** — `--json` output, `--next-only`, `--require-fragments`
+- **CI/CD integration** — `--json` output, `--next-only`, `--require-fragments`, forge release publishing via `changesharp publish`
 - **AI-ready** — built-in MCP server for AI agent integration
 - **Version propagation** — MSBuild, JSON, and regex target handlers
 - **Pre-release channels** — branch-based pre-release workflows

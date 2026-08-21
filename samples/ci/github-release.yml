@@ -42,6 +42,15 @@ jobs:
           git config user.email "github-actions@github.com"
           git add .
           git commit -m "chore: release $NEXT_VERSION"
-          git push
           git tag v$NEXT_VERSION
-          git push --tags
+          git push --atomic origin main v$NEXT_VERSION
+
+      - name: Create GitHub release
+        if: inputs.dry_run == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PAYLOAD=$(changesharp publish --json)
+          VERSION=$(echo "$PAYLOAD" | jq -r '.data.version')
+          BODY=$(echo "$PAYLOAD" | jq -r '.data.body')
+          gh release create "v$VERSION" --title "$VERSION" --notes "$BODY"
