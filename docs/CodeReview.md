@@ -75,7 +75,7 @@ The validation only flags fragments where **none** of the sections are recognize
 `samples/ci/github-bot.yml`, `samples/ci/github-release.yml`, `samples/ci/.gitlab-ci.yml` use `8.0.x` / `dotnet/sdk:8.0`, and install the tool from the global NuGet feed (not from the local pack). The current tool (net10.0) will not run on the 8.0 runtime. The samples are **broken** as-is.
 
 ### b. `release.yml` triggers a release on every push to main
-`.github/workflows/release.yml`: `on: push: branches: [main]`. Every merge triggers an automatic release + tag + push. Aggressive, and contradictory with the "human-in-the-loop" philosophy of the Approval Gates (which do not exist — see 1.b).
+`release.yml` used to run on every push to main, releasing automatically on each merge — aggressive, and contradictory with the "human-in-the-loop" philosophy. It is now `workflow_dispatch`-only: a release is created on demand from the current state of `main`.
 
 ---
 

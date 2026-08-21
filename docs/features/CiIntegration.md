@@ -4,7 +4,7 @@ This document defines how ChangeSharp integrates into enterprise CI/CD pipelines
 
 ## 🚀 The Standard Workflow
 
-ChangeSharp is designed to facilitate a "Release on Merge" or "Release on Tag" workflow.
+ChangeSharp is designed to facilitate a "Release on Merge", "Release on Tag", or **on-demand** workflow. The recommended setup triggers the release **manually** (`workflow_dispatch`) from the current state of `main`, so a release only happens when a human decides to create one.
 
 ### 1. Pull Request / Merge Request Phase
 **Goal**: Ensure every change is documented and valid before it reaches the main branch.
@@ -112,8 +112,7 @@ To function correctly in CI, ChangeSharp requires:
 ```yaml
 name: Release
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   release:
