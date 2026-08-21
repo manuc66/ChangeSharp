@@ -34,7 +34,7 @@ markdown_extensions:
       end_url: /
 
 nav:
-  - Home: ChangeSharp.md
+  - Home: index.md
   - Guide:
       - SemVer Rules: "SemVer Rules.md"
       - Fragment Naming: FragmentNaming.md
