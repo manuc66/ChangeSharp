@@ -6,7 +6,7 @@ To build a reliable MVP, we will prioritize robust parsing, extensible configura
 * Initialize `ChangeSharp.Cli` as a console application configured as a packable tool (`<PackAsTool>true</PackAsTool>`).
 * Set up command handling with `System.CommandLine`.
 * **Define Exit Codes Contract**: Establish stable exit codes (e.g., `0` for success, `1` for generic error, `2` for no changes to release). This is critical for CI/CD integration.
-* See [[ExitCodes|Exit Codes Specification]].
+* See [Exit Codes Specification](ExitCodes.md).
 
 ### Step 2: Integrate Markdig (Early Parsing Layer) (Completed)
 * Replace the manual line-by-line parser with **Markdig**.
@@ -17,7 +17,7 @@ To build a reliable MVP, we will prioritize robust parsing, extensible configura
 * **Status** (`changesharp status`): Lists pending fragments, previews the calculated version bump, and shows config state. This feeds into `--dry-run` and MCP integration.
 * **New Fragment** (`changesharp new`): 
     * Support interactive prompts for message and category (high-priority UX).
-    * **Naming Strategy**: Implement a deterministic naming convention (e.g., `YYYYMMDD-slug.md`) to ensure sorting and avoid collisions. See [[FragmentNaming|Fragment Naming Strategy]].
+    * **Naming Strategy**: Implement a deterministic naming convention (e.g., `YYYYMMDD-slug.md`) to ensure sorting and avoid collisions. See [Fragment Naming Strategy](FragmentNaming.md).
 * **Release** (`changesharp release`):
     * **Idempotence**: Implement a transaction-like strategy or state detection to handle crashes mid-release (e.g., after updating CHANGELOG but before archiving fragments).
     * Aggregate fragments, derive version, update targets, and archive consumed fragments.
@@ -37,14 +37,14 @@ To build a reliable MVP, we will prioritize robust parsing, extensible configura
 * Added `--next-only` and `--require-fragments` CLI options for better CI integration.
 
 ### Step 7: Pre-release Channels and Branch-based Versioning (Completed)
-* See detailed specification: [[Features/Prereleases|Pre-release Feature]]
+* See detailed specification: [Pre-release Feature](features/Prereleases.md)
 
 ### Step 8: Smart Init (Auto-discovery) (Completed)
 * Enhance the `init` command to scan the workspace for common project files (e.g., `.csproj`, `package.json`, `Directory.Build.props`).
 * Automatically suggest and add these as `VersionTargets` in `changesharp.json`.
 * **Continuous Discovery**: `init` is now additive and can be rerun at any time to discover and add new projects added to the repository after the initial setup. `status` also checks for untracked components and warns the user.
-* See [[Features/ContinuousDiscovery|Continuous Discovery Specification]].
-* **Frictionless Merge**: Strategy implemented to avoid conflicts on management files using isolated fragments and deferred versioning. See [[FrictionlessWorkflow|Frictionless Merge Workflow]].
+* See [Continuous Discovery Specification](features/ContinuousDiscovery.md).
+* **Frictionless Merge**: Strategy implemented to avoid conflicts on management files using isolated fragments and deferred versioning. See [Frictionless Merge Workflow](FrictionlessWorkflow.md).
 
 ### Step 9: Fragment Validation and Linting (Completed)
 * Add a `lint` or `validate` command to check if unreleased fragments follow the expected Markdown structure.
@@ -53,7 +53,7 @@ To build a reliable MVP, we will prioritize robust parsing, extensible configura
 ### Step 10: Custom Categories and Mappings (Completed)
 * Allow users to define custom changelog categories in `changesharp.json`.
 * Enable mapping these custom categories to specific SemVer impacts (Major, Minor, or Patch).
-* See [[Features/CustomCategories|Custom Categories Specification]].
+* See [Custom Categories Specification](features/CustomCategories.md).
 
 ### Step 11: AI Automation Layer (CLI + MCP) (Completed)
 
@@ -61,7 +61,7 @@ To build a reliable MVP, we will prioritize robust parsing, extensible configura
 Make ChangeSharp fully automation-ready for CI/CD systems and AI agents without adding complexity to the core system.
 * Implemented a lightweight MCP server in `ChangeSharp.Mcp`.
 * Exposes tools for status, fragment creation, validation, and release.
-* See [[McpIntegration|MCP Integration Documentation]].
+* See [MCP Integration Documentation](McpIntegration.md).
 
 ---
 
@@ -114,12 +114,12 @@ ChangeSharp.MCP    → AI/tooling adapter (Interface only)
     * Build a dedicated GitHub App / GitLab Webhook service.
     * Support OAuth, webhook signature validation, and multi-repo management.
     * Provide a seamless "Install" experience from the marketplace.
-* See [[Features/CiIntegration|CI/CD Integration Contract]].
+* See [CI/CD Integration Contract](features/CiIntegration.md).
 
 ### Step 14: Enterprise Security & Approval Gates (Completed)
 * **Dry-run enforcement**: Implement a mandatory `--dry-run` or `--require-approval` flag for MCP `perform_release` tool.
 * Ensure AI agents cannot trigger a production release without an explicit human gate in the loop.
-* See [[Features/ApprovalGates|Enterprise Security & Approval Gates]].
+* See [Enterprise Security & Approval Gates](features/ApprovalGates.md).
 
 ### Step 15: Repository Intelligence for Agents (Priority 2)
 * **Goal**: Allow AI agents to understand what has changed in the codebase since the last release, even if fragments are missing.
@@ -137,7 +137,7 @@ ChangeSharp.MCP    → AI/tooling adapter (Interface only)
   changesharp release --api-min-level major    # release gate
   ```
 * **Full decoupling**: ChangeSharp does not perform the diff — the team owns the diff tool. ChangeSharp only enforces the policy.
-* See [[Features/ApiSurfaceGate|API Surface Gate Specification]].
+* See [API Surface Gate Specification](features/ApiSurfaceGate.md).
 
 ### Step 17: Multi-Team Monorepo Scoping (Priority 2)
 * **Goal**: Support large-scale enterprise monorepos with independent team policies.
@@ -147,12 +147,12 @@ ChangeSharp.MCP    → AI/tooling adapter (Interface only)
     * **Scoped Fragments**: Support `.changesharp/` directories per service/sub-project.
     * **Service-Specific Changelogs**: Generate independent `CHANGELOG.md` files for different parts of the repository.
     * **Policy Overrides**: Team A might want `Changed -> Major` while Team B wants `Changed -> Minor`.
-* See [[features/MonorepoSupport|Multi-Team Monorepo Support]].
+* See [Multi-Team Monorepo Support](features/MonorepoSupport.md).
 
 ### Step 18: Migration & Enterprise Adoption (Priority 1)
 * **Goal**: Provide a clear path for teams moving from GitVersion/MinVer to ChangeSharp.
 * **Actions**:
-    * Create a dedicated [[Migration|Migration Guide]].
+    * Create a dedicated [Migration Guide](Migration.md).
     * Add "Compatibility Modes" (e.g., auto-import fragments from Git trailers if missing).
     * Develop a "Migration Script" to convert existing changelogs into ChangeSharp fragments (reverse release).
 

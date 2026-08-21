@@ -9,20 +9,19 @@
 ## 📖 Documentation Index
 
 ### 💡 Core Concept
-* [[ChangeSharp#Strategic Positioning|Strategic Positioning]]
-* [[SemVer Rules|SemVer Derivation Rules]] - How fragments impact versioning.
-* [[features/SyntacticValidation|Syntactic Safety Gates]] - Cross-verifying code vs fragments.
-* [[features/ApprovalGates|Approval Gates]] - Security and human-in-the-loop.
-* [[Migration|Migration Guide]] - Moving from GitVersion/MinVer to ChangeSharp.
+* [Strategic Positioning](#strategic-positioning-why-choose-changesharp)
+* [SemVer Derivation Rules](SemVer%20Rules.md) - How fragments impact versioning.
+* [Approval Gates](features/ApprovalGates.md) - Security and human-in-the-loop.
+* [Migration Guide](Migration.md) - Moving from GitVersion/MinVer to ChangeSharp.
 
 ### 🛠️ Development & Roadmap
-* [[Architecture|Codebase Analysis]] - Technical overview of the project.
-* [[Roadmap]] - Completed and planned steps.
-* [[features/CiIntegration|CI/CD Integration]] - Step 6 details and exit codes.
+* [Codebase Analysis](Architecture.md) - Technical overview of the project.
+* [Roadmap](Roadmap.md) - Completed and planned steps.
+* [CI/CD Integration](features/CiIntegration.md) - Step 6 details and exit codes.
 
 ### ✨ Key Features
-* [[Features/Prereleases|Pre-release & Branching]] - Detailed spec for SemVer pre-releases.
-* [[features/MonorepoSupport|Monorepo Support]] - Multi-team hierarchical configuration.
+* [Pre-release & Branching](features/Prereleases.md) - Detailed spec for SemVer pre-releases.
+* [Monorepo Support](features/MonorepoSupport.md) - Multi-team hierarchical configuration.
 
 ---
 
