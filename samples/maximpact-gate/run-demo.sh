@@ -12,9 +12,11 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$ROOT/../.." && pwd)"
 CLI_DLL="$REPO/ChangeSharp.Cli/bin/Release/net10.0/ChangeSharp.Cli.dll"
+MCP_DLL="$REPO/ChangeSharp.Mcp/bin/Release/net10.0/ChangeSharp.Mcp.dll"
 
-echo ">>> Building ChangeSharp CLI (Release) ..."
-dotnet build "$REPO/ChangeSharp.Cli/ChangeSharp.Cli.csproj" -c Release --nologo >/dev/null || { echo "Build failed." >&2; exit 1; }
+echo ">>> Building ChangeSharp CLI + MCP (Release) ..."
+dotnet build "$REPO/ChangeSharp.Cli/ChangeSharp.Cli.csproj" -c Release --nologo >/dev/null || { echo "CLI build failed." >&2; exit 1; }
+dotnet build "$REPO/ChangeSharp.Mcp/ChangeSharp.Mcp.csproj" -c Release --nologo >/dev/null || { echo "MCP build failed." >&2; exit 1; }
 
 cd "$ROOT"
 
@@ -31,6 +33,27 @@ check() {
     printf '  PASS  %s (exit %s)\n' "$label" "$code"; PASS=$((PASS + 1))
   else
     printf '  FAIL  %s (exit=%s, expected=%s)\n' "$label" "$code" "$expected"; FAIL=$((FAIL + 1))
+  fi
+}
+
+# mcp_check <expected_error:0|1> <label> <tool-call-json>
+mcp_check() {
+  local expected="$1"; shift
+  local label="$1"; shift
+  local out
+  out=$(printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    "$1" \
+    | dotnet "$MCP_DLL" 2>/dev/null \
+    | tail -n 1)
+  local err
+  err=$(printf '%s' "$out" | jq -r '.result.isError // false')
+  if [ "$expected" = "1" ] && [ "$err" = "true" ]; then
+    printf '  PASS  %s\n' "$label"; PASS=$((PASS + 1))
+  elif [ "$expected" = "0" ] && [ "$err" = "false" ]; then
+    printf '  PASS  %s\n' "$label"; PASS=$((PASS + 1))
+  else
+    printf '  FAIL  %s (isError=%s, expected=%s)\n' "$label" "$err" "$expected"; FAIL=$((FAIL + 1))
   fi
 }
 
@@ -71,6 +94,24 @@ echo "7. The interactive menu marks blocked categories; --allow-major is exposed
 dotnet "$CLI_DLL" new --help 2>/dev/null | grep -q -- '--allow-major' \
   && { echo "  PASS  new --help exposes --allow-major"; PASS=$((PASS + 1)); } \
   || { echo "  FAIL  new --help does not expose --allow-major"; FAIL=$((FAIL + 1)); }
+
+echo
+echo "== Same gate through the MCP server (same workspace) =="
+echo
+echo "8. MCP create_fragment refuses a Major category without allowMajor:"
+mcp_check 1 "create_fragment --breaking (blocked)" '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_fragment","arguments":{"message":"Break the API","category":"Breaking Changes"}}}'
+
+echo
+echo "9. ... and accepts it with allowMajor: true:"
+mcp_check 0 "create_fragment --breaking allowMajor (explicit opt-in)" '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_fragment","arguments":{"message":"Break the API","category":"Breaking Changes","allowMajor":true}}}'
+
+echo
+echo "10. MCP perform_release refuses above the cap without allowMajor:"
+mcp_check 1 "perform_release (blocked)" '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"perform_release","arguments":{}}}'
+
+echo
+echo "11. ... and succeeds with allowMajor: true:"
+mcp_check 0 "perform_release allowMajor (explicit opt-in)" '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"perform_release","arguments":{"allowMajor":true}}}'
 
 echo
 echo "==========================================="

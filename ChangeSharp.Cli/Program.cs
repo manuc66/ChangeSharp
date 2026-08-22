@@ -150,19 +150,15 @@ class Program
                 try
                 {
                     var manager = new WorkspaceManager();
-                    if (!allowMajor)
+                    string? blockReason = manager.GetCreateFragmentError(category, allowMajor);
+                    if (blockReason != null)
                     {
-                        var (allowed, categoryImpact, maxAllowed) = manager.IsCategoryWithinMaxImpact(category);
-                        if (!allowed)
-                        {
-                            string blockReason = $"Category '{category}' requires a {ImpactLevelName(categoryImpact)} bump, above the configured SemverPolicy.MaxImpact ({ImpactLevelName(maxAllowed)}).";
-                            if (anyCategoryOptionProvided || Console.IsInputRedirected)
-                                return o.Err($"{blockReason} Use --allow-major to override.", ExitCodeValidationError);
-                            Console.WriteLine();
-                            Console.WriteLine($"  {blockReason}");
-                            Console.WriteLine("  Choose another category, or rerun with --allow-major.");
-                            continue;
-                        }
+                        if (anyCategoryOptionProvided || Console.IsInputRedirected)
+                            return o.Err(blockReason, ExitCodeValidationError);
+                        Console.WriteLine();
+                        Console.WriteLine($"  {blockReason}");
+                        Console.WriteLine("  Choose another category, or rerun with --allow-major.");
+                        continue;
                     }
                     string filePath = manager.CreateFragment(message, category);
                     return o.Ok(new
@@ -257,8 +253,20 @@ class Program
 
                 if (!hasErrors)
                 {
-                    int? apiResult = CheckApiMinLevel(parseResult, manager, apiMinLevelOption, apiMinLevelWarnOption, o);
-                    if (apiResult.HasValue) return apiResult.Value;
+                    string? apiMinLevelValue = parseResult.GetValue(apiMinLevelOption);
+                    if (apiMinLevelValue != null)
+                    {
+                        bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
+                        var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(apiMinLevelValue);
+                        if (!pass)
+                        {
+                            string message = $"API surface requires at least a '{apiMinLevelValue}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).";
+                            if (warnOnly)
+                                o.Warn(message);
+                            else
+                                return o.Err(message, ExitCodeValidationError);
+                        }
+                    }
                 }
 
                 var jsonResults = results.Select(r => new { file = r.FilePath, valid = r.IsValid, errors = r.Errors }).ToList();
@@ -388,16 +396,26 @@ class Program
                     });
                 }
 
-                int? apiResult = CheckApiMinLevel(parseResult, manager, apiMinLevelOption, apiMinLevelWarnOption, o);
-                if (apiResult.HasValue) return apiResult.Value;
+                string? apiMinLevelValue = parseResult.GetValue(apiMinLevelOption);
+                bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
+                bool allowMajor = parseResult.GetValue(allowMajorReleaseOption);
 
-                int? maxResult = CheckApiMaxLevel(parseResult, manager, allowMajorReleaseOption, o);
-                if (maxResult.HasValue) return maxResult.Value;
+                var gate = manager.GetReleaseGateResult(apiMinLevelValue, allowMajor);
+                if (gate.Blocked)
+                {
+                    if (gate.CapExceeded || !warnOnly)
+                        return o.Err(gate.Message, ExitCodeValidationError);
+                    o.Warn(gate.Message);
+                }
 
                 var (nextVersion, releaseWarnings) = manager.Release(DateTime.Today, dryRun);
-                foreach (var w in releaseWarnings)
+                var allWarnings = releaseWarnings.Append(gate.CapExceeded ? "Major bump explicitly allowed via --allow-major." : null)
+                    .Where(w => w != null)
+                    .Cast<string>()
+                    .ToList();
+                foreach (var w in allWarnings)
                     Console.Error.WriteLine($"Warning: {w}");
-                return o.Ok(new { releasedVersion = nextVersion, warnings = releaseWarnings },
+                return o.Ok(new { releasedVersion = nextVersion, warnings = allWarnings },
                     () => Console.WriteLine($"Release successful! New version: {nextVersion}"));
             }
             catch (InvalidOperationException ex) when (ex.Message.Contains("Conflict"))
@@ -604,42 +622,6 @@ class Program
     private static Output Out(ParseResult pr, Option<bool> jsonOption) =>
         new(pr.GetValue(jsonOption));
 
-    private static int? CheckApiMinLevel(ParseResult parseResult, WorkspaceManager manager,
-        Option<string> apiMinLevelOption, Option<bool> apiMinLevelWarnOption, Output o)
-    {
-        string? minLevel = parseResult.GetValue(apiMinLevelOption);
-        if (minLevel == null) return null;
-
-        bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
-        var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(minLevel);
-
-        if (pass) return null;
-
-        string message = $"API surface requires at least a '{minLevel}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).";
-
-        if (warnOnly)
-        {
-            o.Warn(message);
-            return null;
-        }
-
-        return o.Err(message, ExitCodeValidationError);
-    }
-
-    private static int? CheckApiMaxLevel(ParseResult parseResult, WorkspaceManager manager,
-        Option<bool> allowMajorOption, Output o)
-    {
-        bool allowMajor = parseResult.GetValue(allowMajorOption);
-        if (allowMajor) return null;
-
-        var (pass, maxImpact, maxLevelName, maxAllowed, offendingCategories) = manager.CheckApiMaxLevel();
-        if (pass) return null;
-
-        string categories = offendingCategories.Length > 0 ? $" ({string.Join(", ", offendingCategories)})" : "";
-        string message = $"Release would bump to '{maxLevelName}' (level {maxImpact}), above the configured SemverPolicy.MaxImpact ({ImpactLevelName(maxAllowed)}){categories}. Use --allow-major to proceed.";
-        return o.Err(message, ExitCodeValidationError);
-    }
-
     private static string? PromptForMessage()
     {
         Console.Write("Enter a description for the change: ");
@@ -730,14 +712,6 @@ class Program
 
         return categories[selected].Name;
     }
-
-    private static string ImpactLevelName(int impact) => impact switch
-    {
-        3 => "major",
-        2 => "minor",
-        1 => "patch",
-        _ => "none"
-    };
 }
 
 readonly struct Output

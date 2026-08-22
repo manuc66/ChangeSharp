@@ -73,6 +73,7 @@ namespace ChangeSharp
                 "Warning"})]
         public static System.ValueTuple<string, string?> ComputeVersionWithWarning(string currentVersion, ChangeSharp.ChangeSet changeSet, ChangeSharp.SemverPolicyConfig? policy = null) { }
         public static string GetNextSemanticVersion(string changeset, string currentVersion) { }
+        public static string ImpactName(int impact) { }
         public static int ParseImpact(string impact) { }
     }
     public class PreReleaseConfig
@@ -137,12 +138,18 @@ namespace ChangeSharp
         public System.ValueTuple<string, string?> CreatePrerelease(string? branch = null, string? channel = null, bool dryRun = false) { }
         public System.Collections.Generic.List<ChangeSharp.VersionTargetConfig> DiscoverNewTargets() { }
         public System.Collections.Generic.List<ChangeSharp.VersionTargetConfig> DiscoverVersionTargets() { }
+        public string? GetCreateFragmentError(string category, bool allowMajor) { }
         public string GetCurrentBranch() { }
         public System.Collections.Generic.IEnumerable<string> GetEffectiveVersionTargets() { }
         [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
                 "Version",
                 "Body"})]
         public System.ValueTuple<string, string> GetLatestRelease() { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string?[]?[] {
+                "Blocked",
+                "Message",
+                "CapExceeded"})]
+        public System.ValueTuple<bool, string, bool> GetReleaseGateResult(string? apiMinLevel, bool allowMajor) { }
         public void GetStatus(out int fragmentCount, out ChangeSharp.ChangeSet mergedChangeSet, out string currentVersion, out string nextVersion) { }
         [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
                 "Version",

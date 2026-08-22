@@ -93,6 +93,14 @@ public class NextVersionComputer
         };
     }
 
+    public static string ImpactName(int impact) => impact switch
+    {
+        3 => "major",
+        2 => "minor",
+        1 => "patch",
+        _ => "none"
+    };
+
     public static string ComputePrereleaseVersion(string currentVersion, ChangeSet changeSet, string identifier, int counter, SemverPolicyConfig? policy = null)
     {
         string prefix = "";

@@ -154,24 +154,14 @@ class Program
                     var message = args?["message"]?.ToString() ?? "";
                     var category = args?["category"]?.ToString() ?? "Added";
                     bool allowFragmentMajor = args?["allowMajor"]?.GetValue<bool>() ?? false;
-                    if (!allowFragmentMajor)
+                    string? fragmentError = Manager.GetCreateFragmentError(category, allowFragmentMajor);
+                    if (fragmentError != null)
                     {
-                        var (allowed, categoryImpact, maxAllowed) = Manager.IsCategoryWithinMaxImpact(category);
-                        if (!allowed)
+                        return new
                         {
-                            return new
-                            {
-                                content = new[]
-                                {
-                                    new
-                                    {
-                                        type = "text",
-                                        text = $"Category '{category}' requires a {ImpactLevel(categoryImpact)} bump, above the configured SemverPolicy.MaxImpact ({ImpactLevel(maxAllowed)}). Set allowMajor: true to override."
-                                    }
-                                },
-                                isError = true
-                            };
-                        }
+                            content = new[] { new { type = "text", text = fragmentError } },
+                            isError = true
+                        };
                     }
                     string path = Manager.CreateFragment(message, category);
                     return new
@@ -229,49 +219,19 @@ class Program
                 case "perform_release":
                     bool dryRun = args?["dryRun"]?.GetValue<bool>() ?? false;
                     bool allowMajor = args?["allowMajor"]?.GetValue<bool>() ?? false;
+                    var gate = (Blocked: false, Message: "", CapExceeded: false);
 
                     if (!dryRun)
                     {
                         string? apiMinLevel = args?["apiMinLevel"]?.ToString();
-                        if (apiMinLevel != null)
+                        gate = Manager.GetReleaseGateResult(apiMinLevel, allowMajor);
+                        if (gate.Blocked)
                         {
-                            var (pass, _, _) = Manager.CheckApiMinLevel(apiMinLevel);
-                            if (!pass)
+                            return new
                             {
-                                return new
-                                {
-                                    content = new[]
-                                    {
-                                        new
-                                        {
-                                            type = "text",
-                                            text = $"API surface requires at least a '{apiMinLevel}' bump, but fragments are below this level."
-                                        }
-                                    },
-                                    isError = true
-                                };
-                            }
-                        }
-
-                        if (!allowMajor)
-                        {
-                            var (withinCap, maxImpact, maxLevelName, _, offendingCategories) = Manager.CheckApiMaxLevel();
-                            if (!withinCap)
-                            {
-                                string cats = offendingCategories.Length > 0 ? $" ({string.Join(", ", offendingCategories)})" : "";
-                                return new
-                                {
-                                    content = new[]
-                                    {
-                                        new
-                                        {
-                                            type = "text",
-                                            text = $"Release would bump to '{maxLevelName}' (level {maxImpact}), above the configured SemverPolicy.MaxImpact{cats}. Set allowMajor: true to proceed."
-                                        }
-                                    },
-                                    isError = true
-                                };
-                            }
+                                content = new[] { new { type = "text", text = gate.Message } },
+                                isError = true
+                            };
                         }
 
                         // Check Security config from changesharp.json
@@ -300,8 +260,11 @@ class Program
                     try
                     {
                         var (version, releaseWarnings) = Manager.Release(DateTime.Today, dryRun);
-                        string warningText = releaseWarnings.Length > 0
-                            ? "\nWarnings:\n" + string.Join("\n", releaseWarnings.Select(w => $"  - {w}"))
+                        var allWarnings = releaseWarnings.ToList();
+                        if (!dryRun && gate.CapExceeded)
+                            allWarnings.Add("Major bump explicitly allowed via allowMajor.");
+                        string warningText = allWarnings.Count > 0
+                            ? "\nWarnings:\n" + string.Join("\n", allWarnings.Select(w => $"  - {w}"))
                             : "";
                         return new
                         {
@@ -341,14 +304,6 @@ class Program
             };
         }
     }
-
-    private static string ImpactLevel(int impact) => impact switch
-    {
-        3 => "major",
-        2 => "minor",
-        1 => "patch",
-        _ => "none"
-    };
 
     private static void SendResponse(JsonNode? id, object result)
     {

@@ -716,6 +716,102 @@ public class WorkspaceManagerTests
     }
 
     [Test]
+    public void GetCreateFragmentError_BlockedCategory_ReturnsMessage()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+
+        string? error = manager.GetCreateFragmentError("Breaking Changes", allowMajor: false);
+
+        Assert.That(error, Is.Not.Null);
+        Assert.That(error, Does.Contain("major"));
+        Assert.That(error, Does.Contain("--allow-major"));
+    }
+
+    [Test]
+    public void GetCreateFragmentError_AllowMajor_ReturnsNull()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+
+        string? error = manager.GetCreateFragmentError("Breaking Changes", allowMajor: true);
+
+        Assert.That(error, Is.Null);
+    }
+
+    [Test]
+    public void GetCreateFragmentError_WithinCap_ReturnsNull()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+
+        string? error = manager.GetCreateFragmentError("Added", allowMajor: false);
+
+        Assert.That(error, Is.Null);
+    }
+
+    [Test]
+    public void GetReleaseGateResult_CapExceededWithoutAllowMajor_Blocks()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+        manager.CreateFragment("Breaking API change", "Breaking Changes");
+
+        var (blocked, message, capExceeded) = manager.GetReleaseGateResult(null, allowMajor: false);
+
+        Assert.That(blocked, Is.True);
+        Assert.That(capExceeded, Is.True);
+        Assert.That(message, Does.Contain("major"));
+        Assert.That(message, Does.Contain("--allow-major"));
+    }
+
+    [Test]
+    public void GetReleaseGateResult_AllowMajor_ProceedsButFlagsCapExceeded()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+        manager.CreateFragment("Breaking API change", "Breaking Changes");
+
+        var (blocked, _, capExceeded) = manager.GetReleaseGateResult(null, allowMajor: true);
+
+        Assert.That(blocked, Is.False);
+        Assert.That(capExceeded, Is.True);
+    }
+
+    [Test]
+    public void GetReleaseGateResult_FloorBelowRequired_Blocks()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        manager.CreateFragment("Fix a bug", "Fixed");
+
+        var (blocked, message, capExceeded) = manager.GetReleaseGateResult("minor", allowMajor: false);
+
+        Assert.That(blocked, Is.True);
+        Assert.That(capExceeded, Is.False);
+        Assert.That(message, Does.Contain("API surface requires"));
+    }
+
+    [Test]
+    public void GetReleaseGateResult_AllGood_ReturnsNotBlocked()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+        manager.CreateFragment("New feature", "Added");
+
+        var (blocked, _, capExceeded) = manager.GetReleaseGateResult(null, allowMajor: false);
+
+        Assert.That(blocked, Is.False);
+        Assert.That(capExceeded, Is.False);
+    }
+
+    [Test]
     public void ListFragmentFiles_EmptyDir_ReturnsEmpty()
     {
         var manager = new WorkspaceManager(_testDir);

@@ -38,8 +38,9 @@ Impact levels supported: `major` (default, no cap), `minor`, `patch`.
 samples/maximpact-gate/run-demo.sh
 ```
 
-The script builds the ChangeSharp CLI from the repo and asserts the exit codes
-for every scenario above. It is self-cleaning (no files are left behind).
+The script builds the ChangeSharp CLI and MCP server from the repo and asserts the
+exit codes for every scenario above, including the same gate through the MCP tools
+(`create_fragment` / `perform_release`). It is self-cleaning (no files are left behind).
 
 ## Notes
 

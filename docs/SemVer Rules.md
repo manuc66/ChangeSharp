@@ -71,6 +71,8 @@ ChangeSharp does **not** perform the API diff itself — it only enforces the po
 
 `MaxImpact` accepts `patch`, `minor`, or `major`. The default is `major`, which disables the cap entirely — existing projects are unaffected until they opt in.
 
+> **Note on custom mappings**: the cap applies to the *impact level* your `Mappings` declare, not to whether a change is actually breaking. If you map `Changed → Major` (like this repository does) and set `MaxImpact: minor`, then `changesharp new --changed` is blocked too — even for harmless changes. With such a mapping, choose `MaxImpact: major` (or accept that every `Changed` needs `--allow-major`).
+
 ### Where it is enforced
 
 | Step | Behavior |

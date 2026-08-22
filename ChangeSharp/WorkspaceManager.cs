@@ -292,6 +292,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         return (categoryImpact <= maxAllowed, categoryImpact, maxAllowed);
     }
 
+    public string? GetCreateFragmentError(string category, bool allowMajor)
+    {
+        if (allowMajor) return null;
+
+        var (allowed, categoryImpact, maxAllowed) = IsCategoryWithinMaxImpact(category);
+        if (allowed) return null;
+
+        return $"Category '{category}' requires a {NextVersionComputer.ImpactName(categoryImpact)} bump, above the configured SemverPolicy.MaxImpact ({NextVersionComputer.ImpactName(maxAllowed)}). Use --allow-major to override.";
+    }
+
+    public (bool Blocked, string Message, bool CapExceeded) GetReleaseGateResult(string? apiMinLevel, bool allowMajor)
+    {
+        if (apiMinLevel != null)
+        {
+            var (pass, maxImpact, maxLevelName) = CheckApiMinLevel(apiMinLevel);
+            if (!pass)
+                return (true, $"API surface requires at least a '{apiMinLevel}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).", false);
+        }
+
+        var (withinCap, maxImpact2, maxLevelName2, maxAllowed, offendingCategories) = CheckApiMaxLevel();
+        bool capExceeded = !withinCap;
+        if (capExceeded && !allowMajor)
+        {
+            string categories = offendingCategories.Length > 0 ? $" ({string.Join(", ", offendingCategories)})" : "";
+            string message = $"Release would bump to '{maxLevelName2}' (level {maxImpact2}), above the configured SemverPolicy.MaxImpact ({NextVersionComputer.ImpactName(maxAllowed)}){categories}. Use --allow-major to proceed.";
+            return (true, message, true);
+        }
+
+        return (false, "", capExceeded);
+    }
+
     private static (int MaxImpact, string MaxLevelName) ComputeMaxImpact(ChangeSet merged, SemverPolicyConfig policy)
     {
         int maxImpact = 0;
