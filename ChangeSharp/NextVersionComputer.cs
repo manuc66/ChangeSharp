@@ -38,48 +38,44 @@ public class NextVersionComputer
             version = new SemVersion(0);
         }
 
-        SemVersion nextVersion;
-
         int maxImpact = 0;
-        
         foreach (var pair in changeSet.Sections)
         {
-            if (pair.Value.Count > 0)
+            if (pair.Value.Count > 0 && policy.Mappings.TryGetValue(pair.Key, out var impact))
             {
-                if (policy.Mappings.TryGetValue(pair.Key, out var impact))
-                {
-                    maxImpact = Math.Max(maxImpact, ParseImpact(impact));
-                }
+                maxImpact = Math.Max(maxImpact, ParseImpact(impact));
             }
         }
 
-        if (maxImpact == 3)
-        {
-            if (version.IsPrerelease && version.Minor == 0 && version.Patch == 0)
-                nextVersion = new SemVersion(version.Major, 0, 0);
-            else
-                nextVersion = new SemVersion(version.Major + 1, 0, 0);
-        }
-        else if (maxImpact == 2)
-        {
-            if (version.IsPrerelease && version.Patch == 0)
-                nextVersion = new SemVersion(version.Major, version.Minor, 0);
-            else
-                nextVersion = new SemVersion(version.Major, version.Minor + 1, 0);
-        }
-        else if (maxImpact == 1)
-        {
-            if (version.IsPrerelease)
-                nextVersion = new SemVersion(version.Major, version.Minor, version.Patch);
-            else
-                nextVersion = new SemVersion(version.Major, version.Minor, version.Patch + 1);
-        }
-        else
-        {
-            nextVersion = version;
-        }
+        SemVersion nextVersion = BumpForImpact(version, maxImpact);
 
         return ($"{prefix}{nextVersion}", warning);
+    }
+
+    private static SemVersion BumpForImpact(SemVersion version, int maxImpact)
+    {
+        if (maxImpact >= 3)
+        {
+            if (version.IsPrerelease && version.Minor == 0 && version.Patch == 0)
+                return new SemVersion(version.Major, 0, 0);
+            return new SemVersion(version.Major + 1, 0, 0);
+        }
+
+        if (maxImpact >= 2)
+        {
+            if (version.IsPrerelease && version.Patch == 0)
+                return new SemVersion(version.Major, version.Minor, 0);
+            return new SemVersion(version.Major, version.Minor + 1, 0);
+        }
+
+        if (maxImpact >= 1)
+        {
+            if (version.IsPrerelease)
+                return new SemVersion(version.Major, version.Minor, version.Patch);
+            return new SemVersion(version.Major, version.Minor, version.Patch + 1);
+        }
+
+        return version;
     }
 
     public static int ParseImpact(string impact)
@@ -92,6 +88,14 @@ public class NextVersionComputer
             _ => 0
         };
     }
+
+    public static string ImpactName(int impact) => impact switch
+    {
+        3 => "major",
+        2 => "minor",
+        1 => "patch",
+        _ => "none"
+    };
 
     public static string ComputePrereleaseVersion(string currentVersion, ChangeSet changeSet, string identifier, int counter, SemverPolicyConfig? policy = null)
     {

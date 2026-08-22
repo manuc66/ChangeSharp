@@ -83,12 +83,13 @@ class Program
         var breakingOption   = new Option<bool>("--breaking")   { Description = "Mark change as Breaking Changes." };
 
         var fileOption = new Option<string>("--file") { Description = "Read the change description from a file instead of the message argument, stdin, or a prompt." };
+        var allowMajorOption = new Option<bool>("--allow-major") { Description = "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact." };
 
         var newCommand = new Command("new", "Create a new unreleased changelog fragment.")
         {
             messageArgument, addedOption, changedOption, fixedOption,
             removedOption, deprecatedOption, securityOption, breakingOption,
-            fileOption, jsonOption,
+            fileOption, allowMajorOption, jsonOption,
         };
 
         newCommand.SetAction(parseResult =>
@@ -121,40 +122,54 @@ class Program
             bool deprecated = parseResult.GetValue(deprecatedOption);
             bool security = parseResult.GetValue(securityOption);
             bool breaking = parseResult.GetValue(breakingOption);
+            bool allowMajor = parseResult.GetValue(allowMajorOption);
 
             bool anyCategoryOptionProvided = added || changed || fixedOpt || removed || deprecated || security || breaking;
 
-            if (anyCategoryOptionProvided)
+            while (true)
             {
-                category = breaking ? "Breaking Changes"
-                         : removed ? "Removed"
-                         : changed ? "Changed"
-                         : deprecated ? "Deprecated"
-                         : fixedOpt ? "Fixed"
-                         : security ? "Security"
-                         : "Added";
-            }
-            else if (Console.IsInputRedirected)
-            {
-                return o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
-            }
-            else
-            {
-                category = PromptForCategory();
-            }
-
-            try
-            {
-                var manager = new WorkspaceManager();
-                string filePath = manager.CreateFragment(message, category);
-                return o.Ok(new
+                if (anyCategoryOptionProvided)
                 {
-                    filename = Path.GetFileName(filePath),
-                    category,
-                    path = filePath
-                }, () => Console.WriteLine($"Created fragment: {Path.GetFileName(filePath)} under category '{category}'"));
+                    category = breaking ? "Breaking Changes"
+                             : removed ? "Removed"
+                             : changed ? "Changed"
+                             : deprecated ? "Deprecated"
+                             : fixedOpt ? "Fixed"
+                             : security ? "Security"
+                             : "Added";
+                }
+                else if (Console.IsInputRedirected)
+                {
+                    return o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
+                }
+                else
+                {
+                    category = PromptForCategory(allowMajor);
+                }
+
+                try
+                {
+                    var manager = new WorkspaceManager();
+                    string? blockReason = manager.GetCreateFragmentError(category, allowMajor);
+                    if (blockReason != null)
+                    {
+                        if (anyCategoryOptionProvided || Console.IsInputRedirected)
+                            return o.Err(blockReason, ExitCodeValidationError);
+                        Console.WriteLine();
+                        Console.WriteLine($"  {blockReason}");
+                        Console.WriteLine("  Choose another category, or rerun with --allow-major.");
+                        continue;
+                    }
+                    string filePath = manager.CreateFragment(message, category);
+                    return o.Ok(new
+                    {
+                        filename = Path.GetFileName(filePath),
+                        category,
+                        path = filePath
+                    }, () => Console.WriteLine($"Created fragment: {Path.GetFileName(filePath)} under category '{category}'"));
+                }
+                catch (Exception ex) { return o.Err(ex.Message); }
             }
-            catch (Exception ex) { return o.Err(ex.Message); }
         });
         rootCommand.Add(newCommand);
 
@@ -238,8 +253,20 @@ class Program
 
                 if (!hasErrors)
                 {
-                    int? apiResult = CheckApiMinLevel(parseResult, manager, apiMinLevelOption, apiMinLevelWarnOption, o);
-                    if (apiResult.HasValue) return apiResult.Value;
+                    string? apiMinLevelValue = parseResult.GetValue(apiMinLevelOption);
+                    if (apiMinLevelValue != null)
+                    {
+                        bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
+                        var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(apiMinLevelValue);
+                        if (!pass)
+                        {
+                            string message = $"API surface requires at least a '{apiMinLevelValue}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).";
+                            if (warnOnly)
+                                o.Warn(message);
+                            else
+                                return o.Err(message, ExitCodeValidationError);
+                        }
+                    }
                 }
 
                 var jsonResults = results.Select(r => new { file = r.FilePath, valid = r.IsValid, errors = r.Errors }).ToList();
@@ -283,10 +310,11 @@ class Program
         var dryRunOption = new Option<bool>("--dry-run") { Description = "Display what would happen without making any changes." };
         var allowEmptyOption = new Option<bool>("--allow-empty") { Description = "Exit with success even if no unreleased fragments are found." };
         var requireApprovalOption = new Option<bool>("--require-approval") { Description = "Require explicit approval (CHANGESHARP_ALLOW_UNSAFE_RELEASE) to proceed." };
+        var allowMajorReleaseOption = new Option<bool>("--allow-major") { Description = "Allow a release whose impact exceeds SemverPolicy.MaxImpact." };
         var releaseCommand = new Command("release", "Aggregate fragments, bump version, update CHANGELOG.md, and clean up.")
         {
             dryRunOption, allowEmptyOption, requireApprovalOption,
-            apiMinLevelOption, apiMinLevelWarnOption, jsonOption
+            apiMinLevelOption, apiMinLevelWarnOption, allowMajorReleaseOption, jsonOption
         };
         releaseCommand.SetAction(parseResult =>
         {
@@ -368,13 +396,26 @@ class Program
                     });
                 }
 
-                int? apiResult = CheckApiMinLevel(parseResult, manager, apiMinLevelOption, apiMinLevelWarnOption, o);
-                if (apiResult.HasValue) return apiResult.Value;
+                string? apiMinLevelValue = parseResult.GetValue(apiMinLevelOption);
+                bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
+                bool allowMajor = parseResult.GetValue(allowMajorReleaseOption);
+
+                var gate = manager.GetReleaseGateResult(apiMinLevelValue, allowMajor);
+                if (gate.Blocked)
+                {
+                    if (gate.CapExceeded || !warnOnly)
+                        return o.Err(gate.Message, ExitCodeValidationError);
+                    o.Warn(gate.Message);
+                }
 
                 var (nextVersion, releaseWarnings) = manager.Release(DateTime.Today, dryRun);
-                foreach (var w in releaseWarnings)
+                var allWarnings = releaseWarnings.Append(gate.CapExceeded ? "Major bump explicitly allowed via --allow-major." : null)
+                    .Where(w => w != null)
+                    .Cast<string>()
+                    .ToList();
+                foreach (var w in allWarnings)
                     Console.Error.WriteLine($"Warning: {w}");
-                return o.Ok(new { releasedVersion = nextVersion, warnings = releaseWarnings },
+                return o.Ok(new { releasedVersion = nextVersion, warnings = allWarnings },
                     () => Console.WriteLine($"Release successful! New version: {nextVersion}"));
             }
             catch (InvalidOperationException ex) when (ex.Message.Contains("Conflict"))
@@ -581,35 +622,13 @@ class Program
     private static Output Out(ParseResult pr, Option<bool> jsonOption) =>
         new(pr.GetValue(jsonOption));
 
-    private static int? CheckApiMinLevel(ParseResult parseResult, WorkspaceManager manager,
-        Option<string> apiMinLevelOption, Option<bool> apiMinLevelWarnOption, Output o)
-    {
-        string? minLevel = parseResult.GetValue(apiMinLevelOption);
-        if (minLevel == null) return null;
-
-        bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
-        var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(minLevel);
-
-        if (pass) return null;
-
-        string message = $"API surface requires at least a '{minLevel}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).";
-
-        if (warnOnly)
-        {
-            o.Warn(message);
-            return null;
-        }
-
-        return o.Err(message, ExitCodeValidationError);
-    }
-
     private static string? PromptForMessage()
     {
         Console.Write("Enter a description for the change: ");
         return Console.ReadLine();
     }
 
-    private static string PromptForCategory()
+    private static string PromptForCategory(bool allowMajor)
     {
         var categories = new (string Name, string Description)[]
         {
@@ -622,67 +641,76 @@ class Program
             ("Breaking Changes", "Backward-incompatible change")
         };
 
-        Dictionary<string, string>? impacts = null;
+        SemverPolicyConfig? policy = null;
         try
         {
-            impacts = new WorkspaceManager().LoadConfig().SemverPolicy.Mappings;
+            policy = new WorkspaceManager().LoadConfig().SemverPolicy;
         }
         catch
         {
             // impact display is best-effort
         }
 
+        int maxAllowed = policy == null ? 3 : NextVersionComputer.ParseImpact(policy.MaxImpact);
+
+        string? impactOf(string name) =>
+            policy?.Mappings.TryGetValue(name, out var v) == true ? v : null;
+
+        bool isBlocked(string name) =>
+            !allowMajor && impactOf(name) is { } impact && NextVersionComputer.ParseImpact(impact) > maxAllowed;
+
         int selected = 0;
         Console.WriteLine("Select a category (↑/↓ to navigate, Enter to confirm, Esc to cancel, 1-7 to jump):");
         while (true)
         {
-            for (int i = 0; i < categories.Length; i++)
-            {
-                Console.CursorLeft = 0;
-                string impact = impacts != null && impacts.TryGetValue(categories[i].Name, out var v) ? $" ({v})" : "";
-                if (i == selected)
-                {
-                    Console.Write("> ");
-                    Console.BackgroundColor = ConsoleColor.DarkBlue;
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.Write(categories[i].Name.PadRight(18));
-                    Console.ResetColor();
-                    Console.WriteLine($"{impact} — {categories[i].Description}");
-                }
-                else
-                {
-                    Console.WriteLine($"  {categories[i].Name.PadRight(18)}{impact} — {categories[i].Description}");
-                }
-            }
-
+            RenderCategoryMenu(categories, selected, impactOf, isBlocked);
             var key = Console.ReadKey(true);
-            if (key.Key == ConsoleKey.UpArrow && selected > 0)
+            var next = ApplyCategoryKey(key, categories.Length, selected);
+            if (next.IsFinal)
             {
-                selected--;
-            }
-            else if (key.Key == ConsoleKey.DownArrow && selected < categories.Length - 1)
-            {
-                selected++;
-            }
-            else if (key.Key == ConsoleKey.Enter)
-            {
+                selected = next.Selected;
                 break;
             }
-            else if (key.Key == ConsoleKey.Escape)
-            {
-                selected = 0;
-                break;
-            }
-            else if (key.Key >= ConsoleKey.D1 && key.Key <= ConsoleKey.D7)
-            {
-                selected = key.Key - ConsoleKey.D1;
-                break;
-            }
-
+            selected = next.Selected;
             Console.CursorTop -= categories.Length;
         }
 
         return categories[selected].Name;
+    }
+
+    private static void RenderCategoryMenu(
+        (string Name, string Description)[] categories, int selected,
+        Func<string, string?> impactOf, Func<string, bool> isBlocked)
+    {
+        for (int i = 0; i < categories.Length; i++)
+        {
+            Console.CursorLeft = 0;
+            string impact = impactOf(categories[i].Name) is { } v ? $" ({v})" : "";
+            string blocked = isBlocked(categories[i].Name) ? " ⚠ blocked (MaxImpact)" : "";
+            if (i == selected)
+            {
+                Console.Write("> ");
+                Console.BackgroundColor = ConsoleColor.DarkBlue;
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.Write(categories[i].Name.PadRight(18));
+                Console.ResetColor();
+                Console.WriteLine($"{impact}{blocked} — {categories[i].Description}");
+            }
+            else
+            {
+                Console.WriteLine($"  {categories[i].Name.PadRight(18)}{impact}{blocked} — {categories[i].Description}");
+            }
+        }
+    }
+
+    private static (bool IsFinal, int Selected) ApplyCategoryKey(ConsoleKeyInfo key, int count, int selected)
+    {
+        if (key.Key == ConsoleKey.UpArrow && selected > 0) return (false, selected - 1);
+        if (key.Key == ConsoleKey.DownArrow && selected < count - 1) return (false, selected + 1);
+        if (key.Key == ConsoleKey.Escape) return (true, 0);
+        if (key.Key >= ConsoleKey.D1 && key.Key <= ConsoleKey.D7) return (true, key.Key - ConsoleKey.D1);
+        if (key.Key == ConsoleKey.Enter) return (true, selected);
+        return (false, selected);
     }
 }
 

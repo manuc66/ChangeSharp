@@ -72,7 +72,8 @@ class Program
                                     properties = new
                                     {
                                         message = new { type = "string", description = "The description of the change." },
-                                        category = new { type = "string", description = "The category of the change (e.g., Added, Fixed, Changed, Removed)." }
+                                        category = new { type = "string", description = "The category of the change (e.g., Added, Fixed, Changed, Removed)." },
+                                        allowMajor = new { type = "boolean", description = "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact." }
                                     },
                                     required = new[] { "message", "category" }
                                 }
@@ -84,7 +85,10 @@ class Program
                                 inputSchema = new
                                 {
                                     type = "object",
-                                    properties = new { }
+                                    properties = new
+                                    {
+                                        apiMinLevel = new { type = "string", description = "Optional minimum API impact level (patch, minor, major). Fails if fragments are below this level." }
+                                    }
                                 }
                             },
                             new
@@ -96,7 +100,9 @@ class Program
                                     type = "object",
                                     properties = new
                                     {
-                                        dryRun = new { type = "boolean", description = "If true, only preview the changes without applying them." }
+                                        dryRun = new { type = "boolean", description = "If true, only preview the changes without applying them." },
+                                        allowMajor = new { type = "boolean", description = "Allow a release whose impact exceeds SemverPolicy.MaxImpact." },
+                                        apiMinLevel = new { type = "string", description = "Optional minimum API impact level (patch, minor, major). Fails if fragments are below this level." }
                                     }
                                 }
                             }
@@ -147,6 +153,16 @@ class Program
                 case "create_fragment":
                     var message = args?["message"]?.ToString() ?? "";
                     var category = args?["category"]?.ToString() ?? "Added";
+                    bool allowFragmentMajor = args?["allowMajor"]?.GetValue<bool>() ?? false;
+                    string? fragmentError = Manager.GetCreateFragmentError(category, allowFragmentMajor);
+                    if (fragmentError != null)
+                    {
+                        return new
+                        {
+                            content = new[] { new { type = "text", text = fragmentError } },
+                            isError = true
+                        };
+                    }
                     string path = Manager.CreateFragment(message, category);
                     return new
                     {
@@ -164,6 +180,26 @@ class Program
                     var validationResults = Manager.Validate();
                     if (validationResults.Count == 0 || validationResults.All(r => r.IsValid))
                     {
+                        string? apiMinLevel = args?["apiMinLevel"]?.ToString();
+                        if (apiMinLevel != null)
+                        {
+                            var (pass, maxImpact, maxLevelName) = Manager.CheckApiMinLevel(apiMinLevel);
+                            if (!pass)
+                            {
+                                return new
+                                {
+                                    content = new[]
+                                    {
+                                        new
+                                        {
+                                            type = "text",
+                                            text = $"API surface requires at least a '{apiMinLevel}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact})."
+                                        }
+                                    },
+                                    isError = true
+                                };
+                            }
+                        }
                         return new { content = new[] { new { type = "text", text = "All fragments are valid." } } };
                     }
                     var errors = string.Join("\n", validationResults.Where(r => !r.IsValid).Select(r => $"- {r.FilePath}: {string.Join(", ", r.Errors)}"));
@@ -182,9 +218,22 @@ class Program
 
                 case "perform_release":
                     bool dryRun = args?["dryRun"]?.GetValue<bool>() ?? false;
+                    bool allowMajor = args?["allowMajor"]?.GetValue<bool>() ?? false;
+                    var gate = (Blocked: false, Message: "", CapExceeded: false);
 
                     if (!dryRun)
                     {
+                        string? apiMinLevel = args?["apiMinLevel"]?.ToString();
+                        gate = Manager.GetReleaseGateResult(apiMinLevel, allowMajor);
+                        if (gate.Blocked)
+                        {
+                            return new
+                            {
+                                content = new[] { new { type = "text", text = gate.Message } },
+                                isError = true
+                            };
+                        }
+
                         // Check Security config from changesharp.json
                         var config = Manager.LoadConfig();
                         if (config.Security.RequireApproval || config.Security.AllowAgentRelease == false)
@@ -211,8 +260,11 @@ class Program
                     try
                     {
                         var (version, releaseWarnings) = Manager.Release(DateTime.Today, dryRun);
-                        string warningText = releaseWarnings.Length > 0
-                            ? "\nWarnings:\n" + string.Join("\n", releaseWarnings.Select(w => $"  - {w}"))
+                        var allWarnings = releaseWarnings.ToList();
+                        if (!dryRun && gate.CapExceeded)
+                            allWarnings.Add("Major bump explicitly allowed via allowMajor.");
+                        string warningText = allWarnings.Count > 0
+                            ? "\nWarnings:\n" + string.Join("\n", allWarnings.Select(w => $"  - {w}"))
                             : "";
                         return new
                         {

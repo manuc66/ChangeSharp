@@ -248,12 +248,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         if (count == 0)
             return (true, 0, "none");
 
+        var (maxImpact, maxLevelName) = ComputeMaxImpact(merged, config.SemverPolicy);
+        return (maxImpact >= required, maxImpact, maxLevelName);
+    }
+
+    public (bool Pass, int MaxImpact, string MaxLevelName, int MaxAllowed, string[] OffendingCategories) CheckApiMaxLevel()
+    {
+        var config = LoadConfig();
+        int maxAllowed = NextVersionComputer.ParseImpact(config.SemverPolicy.MaxImpact);
+        if (maxAllowed == 0)
+            throw new ArgumentException($"Invalid SemverPolicy.MaxImpact '{config.SemverPolicy.MaxImpact}'. Valid values: patch, minor, major.", "MaxImpact");
+
+        GetStatus(out int count, out ChangeSet merged, out _, out _);
+
+        // No fragments → nothing to check, always pass
+        if (count == 0)
+            return (true, 0, "none", maxAllowed, Array.Empty<string>());
+
+        var (maxImpact, maxLevelName) = ComputeMaxImpact(merged, config.SemverPolicy);
+
+        var offendingCategories = merged.Sections
+            .Where(pair => pair.Value.Count > 0
+                && config.SemverPolicy.Mappings.TryGetValue(pair.Key, out var impact)
+                && NextVersionComputer.ParseImpact(impact) > maxAllowed)
+            .Select(pair => pair.Key)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return (maxImpact <= maxAllowed, maxImpact, maxLevelName, maxAllowed, offendingCategories);
+    }
+
+    public (bool Allowed, int CategoryImpact, int MaxAllowed) IsCategoryWithinMaxImpact(string category)
+    {
+        var config = LoadConfig();
+        int maxAllowed = NextVersionComputer.ParseImpact(config.SemverPolicy.MaxImpact);
+        if (maxAllowed == 0)
+            throw new ArgumentException($"Invalid SemverPolicy.MaxImpact '{config.SemverPolicy.MaxImpact}'. Valid values: patch, minor, major.", "MaxImpact");
+
+        if (!config.SemverPolicy.Mappings.TryGetValue(category, out var impact))
+            return (true, 0, maxAllowed);
+
+        int categoryImpact = NextVersionComputer.ParseImpact(impact);
+        return (categoryImpact <= maxAllowed, categoryImpact, maxAllowed);
+    }
+
+    public string? GetCreateFragmentError(string category, bool allowMajor)
+    {
+        if (allowMajor) return null;
+
+        var (allowed, categoryImpact, maxAllowed) = IsCategoryWithinMaxImpact(category);
+        if (allowed) return null;
+
+        return $"Category '{category}' requires a {NextVersionComputer.ImpactName(categoryImpact)} bump, above the configured SemverPolicy.MaxImpact ({NextVersionComputer.ImpactName(maxAllowed)}). Use --allow-major to override.";
+    }
+
+    public (bool Blocked, string Message, bool CapExceeded) GetReleaseGateResult(string? apiMinLevel, bool allowMajor)
+    {
+        if (apiMinLevel != null)
+        {
+            var (pass, maxImpact, maxLevelName) = CheckApiMinLevel(apiMinLevel);
+            if (!pass)
+                return (true, $"API surface requires at least a '{apiMinLevel}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).", false);
+        }
+
+        var (withinCap, maxImpact2, maxLevelName2, maxAllowed, offendingCategories) = CheckApiMaxLevel();
+        bool capExceeded = !withinCap;
+        if (capExceeded && !allowMajor)
+        {
+            string categories = offendingCategories.Length > 0 ? $" ({string.Join(", ", offendingCategories)})" : "";
+            string message = $"Release would bump to '{maxLevelName2}' (level {maxImpact2}), above the configured SemverPolicy.MaxImpact ({NextVersionComputer.ImpactName(maxAllowed)}){categories}. Use --allow-major to proceed.";
+            return (true, message, true);
+        }
+
+        return (false, "", capExceeded);
+    }
+
+    private static (int MaxImpact, string MaxLevelName) ComputeMaxImpact(ChangeSet merged, SemverPolicyConfig policy)
+    {
         int maxImpact = 0;
         string maxLevelName = "none";
 
         foreach (var pair in merged.Sections)
         {
-            if (pair.Value.Count > 0 && config.SemverPolicy.Mappings.TryGetValue(pair.Key, out var impact))
+            if (pair.Value.Count > 0 && policy.Mappings.TryGetValue(pair.Key, out var impact))
             {
                 int impactValue = NextVersionComputer.ParseImpact(impact);
                 if (impactValue > maxImpact)
@@ -264,7 +341,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
             }
         }
 
-        return (maxImpact >= required, maxImpact, maxLevelName);
+        return (maxImpact, maxLevelName);
     }
 
     public string[] ListFragmentFiles()

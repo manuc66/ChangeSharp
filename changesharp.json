@@ -36,6 +36,7 @@
     "MaxIdentifierLength": 30
   },
   "SemverPolicy": {
+    "MaxImpact": "major",
     "Mappings": {
       "Breaking Changes": "Major",
       "Removed": "Major",
