@@ -50,63 +50,7 @@ class Program
                 {
                     SendResponse(id, new
                     {
-                        tools = new object[]
-                        {
-                            new
-                            {
-                                name = "get_status",
-                                description = "Get the status of unreleased fragments and the next computed version.",
-                                inputSchema = new
-                                {
-                                    type = "object",
-                                    properties = new { }
-                                }
-                            },
-                            new
-                            {
-                                name = "create_fragment",
-                                description = "Create a new unreleased change fragment.",
-                                inputSchema = new
-                                {
-                                    type = "object",
-                                    properties = new
-                                    {
-                                        message = new { type = "string", description = "The description of the change." },
-                                        category = new { type = "string", description = "The category of the change (e.g., Added, Fixed, Changed, Removed)." },
-                                        allowMajor = new { type = "boolean", description = "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact." }
-                                    },
-                                    required = new[] { "message", "category" }
-                                }
-                            },
-                            new
-                            {
-                                name = "validate_fragments",
-                                description = "Validate all unreleased fragments.",
-                                inputSchema = new
-                                {
-                                    type = "object",
-                                    properties = new
-                                    {
-                                        apiMinLevel = new { type = "string", description = "Optional minimum API impact level (patch, minor, major). Fails if fragments are below this level." }
-                                    }
-                                }
-                            },
-                            new
-                            {
-                                name = "perform_release",
-                                description = "Perform a release by aggregating fragments and bumping versions.",
-                                inputSchema = new
-                                {
-                                    type = "object",
-                                    properties = new
-                                    {
-                                        dryRun = new { type = "boolean", description = "If true, only preview the changes without applying them." },
-                                        allowMajor = new { type = "boolean", description = "Allow a release whose impact exceeds SemverPolicy.MaxImpact." },
-                                        apiMinLevel = new { type = "string", description = "Optional minimum API impact level (patch, minor, major). Fails if fragments are below this level." }
-                                    }
-                                }
-                            }
-                        }
+                        tools = McpToolCatalog.Tools
                     });
                 }
                 else if (method == "tools/call")
@@ -154,6 +98,9 @@ class Program
                     var message = args?["message"]?.ToString() ?? "";
                     var category = args?["category"]?.ToString() ?? "Added";
                     bool allowFragmentMajor = args?["allowMajor"]?.GetValue<bool>() ?? false;
+                    bool separateFragment = args?["separate"]?.GetValue<bool>() ?? false;
+                    string? fragmentTarget = args?["fragment"]?.ToString();
+                    string? changelistName = args?["changelist"]?.ToString();
                     string? fragmentError = Manager.GetCreateFragmentError(category, allowFragmentMajor);
                     if (fragmentError != null)
                     {
@@ -163,7 +110,7 @@ class Program
                             isError = true
                         };
                     }
-                    string path = Manager.CreateFragment(message, category);
+                    var (fragmentPath, appended, formattedCategory) = Manager.AppendFragment(message, category, separateFragment, fragmentTarget, changelistName);
                     return new
                     {
                         content = new[]
@@ -171,7 +118,9 @@ class Program
                             new
                             {
                                 type = "text",
-                                text = $"Fragment created: {Path.GetFileName(path)}"
+                                text = appended
+                                    ? $"Added to {Path.GetFileName(fragmentPath)} under '{formattedCategory}'"
+                                    : $"Fragment created: {Path.GetFileName(fragmentPath)}"
                             }
                         }
                     };

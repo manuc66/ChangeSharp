@@ -45,6 +45,51 @@ public class WorkspaceManagerTests
         File.WriteAllText(Path.Combine(_testDir, "changesharp.json"), config);
     }
 
+    private void WriteConfigWithBranchCap(string globalMaxImpact, string branchPattern, string branchCap)
+    {
+        string config = $$"""
+        {
+          "SemverPolicy": {
+            "MaxImpact": "{{globalMaxImpact}}",
+            "BranchMaxImpact": {
+              "{{branchPattern}}": "{{branchCap}}"
+            },
+            "Mappings": {
+              "Breaking Changes": "Major",
+              "Removed": "Major",
+              "Changed": "Minor",
+              "Added": "Minor",
+              "Deprecated": "Minor",
+              "Fixed": "Patch",
+              "Security": "Patch"
+            }
+          }
+        }
+        """;
+        File.WriteAllText(Path.Combine(_testDir, "changesharp.json"), config);
+    }
+
+    private void InitGit(string branch)
+    {
+        RunGit("init", "-b", branch);
+        RunGit("-c", "user.name=ChangeSharp Tests", "-c", "user.email=test@changesharp", "commit", "--allow-empty", "-m", "init");
+    }
+
+    private void RunGit(params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            WorkingDirectory = _testDir
+        };
+        foreach (var arg in args)
+            psi.ArgumentList.Add(arg);
+        using var process = System.Diagnostics.Process.Start(psi)!;
+        process.WaitForExit();
+    }
+
     [Test]
     public void Release_NormalWorkflow_Works()
     {
@@ -809,6 +854,228 @@ public class WorkspaceManagerTests
 
         Assert.That(blocked, Is.False);
         Assert.That(capExceeded, Is.False);
+    }
+
+    [Test]
+    public void IsDefaultBranch_NoGit_ReturnsFalse()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+
+        Assert.That(manager.IsDefaultBranch(), Is.False);
+    }
+
+    [Test]
+    public void IsDefaultBranch_OnMain_ReturnsTrue()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        InitGit("main");
+
+        Assert.That(manager.IsDefaultBranch(), Is.True);
+    }
+
+    [Test]
+    public void AppendFragment_NoFragments_CreatesNewFile()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+
+        var (path, appended, category) = manager.AppendFragment("Add search", "Added");
+
+        Assert.That(appended, Is.False);
+        Assert.That(category, Is.EqualTo("Added"));
+        Assert.That(File.Exists(path), Is.True);
+        Assert.That(manager.ListFragmentFiles().Length, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void AppendFragment_SameSection_AddsBullet()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        manager.AppendFragment("Add search", "Added");
+        string[] files = manager.ListFragmentFiles();
+
+        var (path, appended, _) = manager.AppendFragment("Add sorting", "Added");
+
+        Assert.That(appended, Is.True);
+        Assert.That(path, Is.EqualTo(Path.Combine(_testDir, files[0])));
+        Assert.That(manager.ListFragmentFiles().Length, Is.EqualTo(1));
+        string content = File.ReadAllText(path);
+        Assert.That(content, Does.Contain("- Add search"));
+        Assert.That(content, Does.Contain("- Add sorting"));
+    }
+
+    [Test]
+    public void AppendFragment_NewSection_AddsSection()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        manager.AppendFragment("Add search", "Added");
+
+        var (path, appended, category) = manager.AppendFragment("Fix crash", "Fixed");
+
+        Assert.That(appended, Is.True);
+        Assert.That(category, Is.EqualTo("Fixed"));
+        string content = File.ReadAllText(path);
+        Assert.That(content, Does.Contain("### Added"));
+        Assert.That(content, Does.Contain("### Fixed"));
+        Assert.That(content, Does.Contain("- Fix crash"));
+    }
+
+    [Test]
+    public void AppendFragment_DuplicateEntry_Throws()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        manager.AppendFragment("Add search", "Added");
+
+        Assert.Throws<InvalidOperationException>(() => manager.AppendFragment("Add search", "Added"));
+    }
+
+    [Test]
+    public void AppendFragment_ChangelistName_CreatesAndAppends()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+
+        var (path1, appended1, _) = manager.AppendFragment("Add search", "Added", changelistName: "my-feature");
+        var (path2, appended2, _) = manager.AppendFragment("Add sorting", "Added", changelistName: "my-feature");
+
+        Assert.That(appended1, Is.False);
+        Assert.That(appended2, Is.True);
+        Assert.That(Path.GetFileName(path1), Is.EqualTo("my-feature.md"));
+        Assert.That(path2, Is.EqualTo(path1));
+        Assert.That(manager.ListFragmentFiles().Length, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void AppendFragment_TargetFile_AppendsToSpecific()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        var (pathA, _, _) = manager.AppendFragment("Add search", "Added", separate: true);
+        manager.AppendFragment("Add sorting", "Added", separate: true);
+
+        var (path, appended, _) = manager.AppendFragment("Fix crash", "Fixed", targetFile: Path.GetFileName(pathA));
+
+        Assert.That(appended, Is.True);
+        Assert.That(path, Is.EqualTo(pathA));
+        Assert.That(File.ReadAllText(pathA), Does.Contain("### Fixed"));
+    }
+
+    [Test]
+    public void AppendFragment_TargetFile_Missing_Throws()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+
+        Assert.Throws<InvalidOperationException>(() => manager.AppendFragment("x", "Added", targetFile: "nope.md"));
+    }
+
+    [Test]
+    public void AppendFragment_Separate_CreatesNewFile()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        var (path1, _, _) = manager.AppendFragment("Add search", "Added");
+
+        var (path, appended, _) = manager.AppendFragment("Add sorting", "Added", separate: true);
+
+        Assert.That(appended, Is.False);
+        Assert.That(manager.ListFragmentFiles().Length, Is.EqualTo(2));
+        Assert.That(Path.GetFileName(path), Is.Not.EqualTo(Path.GetFileName(path1)));
+    }
+
+    [Test]
+    public void AppendFragment_OnDefaultBranch_CreatesNewFile()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        InitGit("main");
+        manager.AppendFragment("Add search", "Added");
+
+        var (path, appended, _) = manager.AppendFragment("Add sorting", "Added");
+
+        Assert.That(appended, Is.False);
+        Assert.That(manager.ListFragmentFiles().Length, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void AppendFragment_OnFeatureBranch_Appends()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        InitGit("feature/ux");
+        manager.AppendFragment("Add search", "Added");
+
+        var (path, appended, _) = manager.AppendFragment("Add sorting", "Added");
+
+        Assert.That(appended, Is.True);
+        Assert.That(manager.ListFragmentFiles().Length, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void BranchMaxImpact_PatchCap_BlocksMinorOnMatchingBranch()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        InitGit("release/1.2");
+        WriteConfigWithBranchCap("minor", "release/*", "patch");
+
+        var (addedAllowed, addedImpact, maxAllowed) = manager.IsCategoryWithinMaxImpact("Added");
+        Assert.That(addedAllowed, Is.False);
+        Assert.That(addedImpact, Is.EqualTo(2));
+        Assert.That(maxAllowed, Is.EqualTo(1));
+
+        var (fixedAllowed, _, _) = manager.IsCategoryWithinMaxImpact("Fixed");
+        Assert.That(fixedAllowed, Is.True);
+    }
+
+    [Test]
+    public void BranchMaxImpact_NoMatchingBranch_UsesGlobalCap()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        InitGit("feature/x");
+        WriteConfigWithBranchCap("minor", "release/*", "patch");
+
+        var (allowed, _, maxAllowed) = manager.IsCategoryWithinMaxImpact("Added");
+
+        Assert.That(allowed, Is.True);
+        Assert.That(maxAllowed, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void CheckApiMaxLevel_BranchCap_BlocksMinorFragment()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        InitGit("release/1.2");
+        WriteConfigWithBranchCap("major", "release/*", "patch");
+        manager.CreateFragment("New feature", "Added");
+
+        var (pass, _, _, maxAllowed, offending) = manager.CheckApiMaxLevel();
+
+        Assert.That(pass, Is.False);
+        Assert.That(maxAllowed, Is.EqualTo(1));
+        Assert.That(offending, Is.EqualTo(new[] { "Added" }));
+    }
+
+    [Test]
+    public void GetCreateFragmentError_BranchCap_BlocksMinor()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        InitGit("release/1.2");
+        WriteConfigWithBranchCap("major", "release/*", "patch");
+
+        string? error = manager.GetCreateFragmentError("Added", allowMajor: false);
+
+        Assert.That(error, Is.Not.Null);
+        Assert.That(error, Does.Contain("minor"));
+        Assert.That(error, Does.Contain("patch"));
     }
 
     [Test]
