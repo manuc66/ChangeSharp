@@ -1,0 +1,159 @@
+Description:
+  ChangeSharp - Keep a Changelog. Derive the version.
+
+Usage:
+  ChangeSharp.Cli [command] [options]
+
+Options:
+  -?, -h, --help  Show help and usage information
+  --version       Show version information
+
+Commands:
+  init               Initialize ChangeSharp configuration and directory structure.
+  new <message>      Create a new unreleased changelog fragment.
+  add <message>      Add a change to the open changelist, or create a new fragment file.
+  status             Show the status of unreleased fragments and computed version bump.
+  validate           Validate unreleased fragments for correct format.
+  release            Aggregate fragments, bump version, update CHANGELOG.md, and clean up.
+  publish            Output a released version and its changelog segment (for creating a forge release).
+  prerelease         Handle pre-release versions based on branches.
+  remove <fragment>  Remove an unreleased changelog fragment.
+
+
+##### init #####
+
+Description:
+  Initialize ChangeSharp configuration and directory structure.
+
+Usage:
+  ChangeSharp.Cli init [options]
+
+Options:
+  --json          Output in JSON format for machine consumption.
+  -?, -h, --help  Show help and usage information
+
+
+##### new #####
+
+Description:
+  Create a new unreleased changelog fragment.
+
+Usage:
+  ChangeSharp.Cli new [<message>] [options]
+
+Arguments:
+  <message>  Description of the changes.
+
+Options:
+  --added         Mark change as Added.
+  --changed       Mark change as Changed.
+  --fixed         Mark change as Fixed.
+  --removed       Mark change as Removed.
+  --deprecated    Mark change as Deprecated.
+  --security      Mark change as Security.
+  --breaking      Mark change as Breaking Changes.
+  --file <file>   Read the change description from a file instead of the message argument, stdin, or a prompt.
+  --allow-major   Allow a fragment whose impact exceeds SemverPolicy.MaxImpact.
+  --json          Output in JSON format for machine consumption.
+  -?, -h, --help  Show help and usage information
+
+
+##### status #####
+
+Description:
+  Show the status of unreleased fragments and computed version bump.
+
+Usage:
+  ChangeSharp.Cli status [options]
+
+Options:
+  --next-only     Only output the next version number.
+  --json          Output in JSON format for machine consumption.
+  -?, -h, --help  Show help and usage information
+
+
+##### validate #####
+
+Description:
+  Validate unreleased fragments for correct format.
+
+Usage:
+  ChangeSharp.Cli validate [options]
+
+Options:
+  --require-fragments              Fail if no unreleased fragments are found.
+  --api-min-level <api-min-level>  Minimum API impact level (patch, minor, major). Fails if fragments are below this level.
+  --api-min-level-warn             Only warn if --api-min-level is not met, do not fail.
+  --json                           Output in JSON format for machine consumption.
+  -?, -h, --help                   Show help and usage information
+
+
+##### release #####
+
+Description:
+  Aggregate fragments, bump version, update CHANGELOG.md, and clean up.
+
+Usage:
+  ChangeSharp.Cli release [options]
+
+Options:
+  --dry-run                        Display what would happen without making any changes.
+  --allow-empty                    Exit with success even if no unreleased fragments are found.
+  --require-approval               Require explicit approval (CHANGESHARP_ALLOW_UNSAFE_RELEASE) to proceed.
+  --api-min-level <api-min-level>  Minimum API impact level (patch, minor, major). Fails if fragments are below this level.
+  --api-min-level-warn             Only warn if --api-min-level is not met, do not fail.
+  --allow-major                    Allow a release whose impact exceeds SemverPolicy.MaxImpact.
+  --json                           Output in JSON format for machine consumption.
+  -?, -h, --help                   Show help and usage information
+
+
+##### publish #####
+
+Description:
+  Output a released version and its changelog segment (for creating a forge release).
+
+Usage:
+  ChangeSharp.Cli publish [options]
+
+Options:
+  --version <version>  Specific released version to output (default: latest).
+  --json               Output in JSON format for machine consumption.
+  -?, -h, --help       Show help and usage information
+
+
+##### prerelease #####
+
+Description:
+  Handle pre-release versions based on branches.
+
+Usage:
+  ChangeSharp.Cli prerelease [options]
+
+Options:
+  --branch <branch>    Specific branch name to use for pre-release.
+  --list               List all active pre-releases.
+  --promote            Promote the latest pre-release to a final release.
+  --channel <channel>  Optional release channel (e.g. alpha, beta, rc).
+  --dry-run            Display what would happen without making any changes.
+  --json               Output in JSON format for machine consumption.
+  -?, -h, --help       Show help and usage information
+
+
+##### remove #####
+
+Description:
+  Remove an unreleased changelog fragment.
+
+Usage:
+  ChangeSharp.Cli remove [<fragment>] [options]
+
+Arguments:
+  <fragment>  Fragment filename to remove (use --list to see available files).
+
+Options:
+  --list          List all unreleased fragments.
+  --all           Remove all unreleased fragments.
+  --yes           Skip confirmation for --all.
+  --json          Output in JSON format for machine consumption.
+  -?, -h, --help  Show help and usage information
+

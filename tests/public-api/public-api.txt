@@ -1,0 +1,223 @@
+[assembly: System.Runtime.Versioning.TargetFramework(".NETCoreApp,Version=v10.0", FrameworkDisplayName=".NET 10.0")]
+namespace ChangeSharp
+{
+    public class ChangeLog
+    {
+        public ChangeLog(string content) { }
+        public string LastVersion { get; }
+        public string? GetVersionContent(string version) { }
+        public ChangeSharp.ChangeLog Release(System.DateTime dateTime, params string[] changesets) { }
+        public ChangeSharp.ChangeLog ReleaseWithVersion(System.DateTime dateTime, string? forcedVersion, params string[] changesets) { }
+        public override string ToString() { }
+        public ChangeSharp.ChangeLog UpdateUnReleased(params string[] changesets) { }
+    }
+    public class ChangeSet
+    {
+        public ChangeSet() { }
+        [System.Obsolete("Use GetSection(\"Added\") to support custom categories.")]
+        public System.Collections.Generic.List<string> Added { get; }
+        [System.Obsolete("Use GetSection(\"Breaking Changes\") to support custom categories.")]
+        public System.Collections.Generic.List<string> Breaking { get; }
+        [System.Obsolete("Use GetSection(\"Changed\") to support custom categories.")]
+        public System.Collections.Generic.List<string> Changed { get; }
+        [System.Obsolete("Use GetSection(\"Deprecated\") to support custom categories.")]
+        public System.Collections.Generic.List<string> Deprecated { get; }
+        [System.Obsolete("Use GetSection(\"Fixed\") to support custom categories.")]
+        public System.Collections.Generic.List<string> Fixed { get; }
+        [System.Obsolete("Use GetSection(\"Removed\") to support custom categories.")]
+        public System.Collections.Generic.List<string> Removed { get; }
+        public System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>> Sections { get; init; }
+        [System.Obsolete("Use GetSection(\"Security\") to support custom categories.")]
+        public System.Collections.Generic.List<string> Security { get; }
+        public System.Collections.Generic.List<string> GetSection(string name) { }
+        public bool IsEmpty() { }
+        public ChangeSharp.ChangeSet Merge(ChangeSharp.ChangeSet other) { }
+        public string ToChangelogString() { }
+        public override string ToString() { }
+    }
+    public class ChangeSetMerger
+    {
+        public ChangeSetMerger() { }
+        public static ChangeSharp.ChangeSet Merge(string[] changeSets) { }
+    }
+    public class ChangeSharpConfig
+    {
+        public ChangeSharpConfig() { }
+        public string ChangelogPath { get; set; }
+        public ChangeSharp.FragmentNamingConfig FragmentNaming { get; set; }
+        public ChangeSharp.PreReleaseConfig PreRelease { get; set; }
+        public string PrereleasesDir { get; set; }
+        public string ReleasingDir { get; set; }
+        public ChangeSharp.SecurityConfig Security { get; set; }
+        public ChangeSharp.SemverPolicyConfig SemverPolicy { get; set; }
+        public string UnreleasedDir { get; set; }
+        public System.Collections.Generic.List<ChangeSharp.VersionTargetConfig> VersionTargets { get; set; }
+    }
+    public class ChangelogParser
+    {
+        public ChangelogParser() { }
+        public ChangeSharp.ChangeSet Parse(string changeset) { }
+    }
+    public class FragmentNamingConfig
+    {
+        public FragmentNamingConfig() { }
+        public bool IncludeBranchName { get; set; }
+    }
+    public class NextVersionComputer
+    {
+        public NextVersionComputer() { }
+        public static string ComputePrereleaseVersion(string currentVersion, ChangeSharp.ChangeSet changeSet, string identifier, int counter, ChangeSharp.SemverPolicyConfig? policy = null) { }
+        public static string ComputeVersion(string currentVersion, ChangeSharp.ChangeSet changeSet, ChangeSharp.SemverPolicyConfig? policy = null) { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "Version",
+                "Warning"})]
+        public static System.ValueTuple<string, string?> ComputeVersionWithWarning(string currentVersion, ChangeSharp.ChangeSet changeSet, ChangeSharp.SemverPolicyConfig? policy = null) { }
+        public static string GetNextSemanticVersion(string changeset, string currentVersion) { }
+        public static string ImpactName(int impact) { }
+        public static int ParseImpact(string impact) { }
+    }
+    public class PreReleaseConfig
+    {
+        public PreReleaseConfig() { }
+        public bool BranchAsIdentifier { get; set; }
+        public bool Enabled { get; set; }
+        public int MaxIdentifierLength { get; set; }
+        public bool SanitizeBranchName { get; set; }
+    }
+    public class SecurityConfig
+    {
+        public SecurityConfig() { }
+        public bool AllowAgentRelease { get; set; }
+        public bool DryRunByDefault { get; set; }
+        public bool RequireApproval { get; set; }
+    }
+    public class SemverPolicyConfig
+    {
+        public SemverPolicyConfig() { }
+        public System.Collections.Generic.Dictionary<string, string> BranchMaxImpact { get; set; }
+        public System.Collections.Generic.Dictionary<string, string> Mappings { get; set; }
+        public string MaxImpact { get; set; }
+    }
+    public class ValidationResult
+    {
+        public ValidationResult() { }
+        public System.Collections.Generic.List<string> Errors { get; set; }
+        public string? FilePath { get; set; }
+        public bool IsValid { get; set; }
+    }
+    public class VersionTargetConfig
+    {
+        public VersionTargetConfig() { }
+        [System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public string? JsonPath { get; set; }
+        public string Path { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public string? Regex { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public string? Replacement { get; set; }
+        public string? Type { get; set; }
+    }
+    public class WorkspaceManager
+    {
+        public WorkspaceManager(string? basePath = null) { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "FragmentPath",
+                "Appended",
+                "Category"})]
+        public System.ValueTuple<string, bool, string> AppendFragment(string message, string category, bool separate = false, string? targetFile = null, string? changelistName = null) { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "Pass",
+                "MaxImpact",
+                "MaxLevelName",
+                "MaxAllowed",
+                "OffendingCategories"})]
+        public System.ValueTuple<bool, int, string, int, string[]> CheckApiMaxLevel() { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "Pass",
+                "MaxImpact",
+                "MaxLevelName"})]
+        public System.ValueTuple<bool, int, string> CheckApiMinLevel(string minLevel) { }
+        public string CreateFragment(string message, string category) { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string?[]?[] {
+                "Version",
+                "Warning"})]
+        public System.ValueTuple<string, string?> CreatePrerelease(string? branch = null, string? channel = null, bool dryRun = false) { }
+        public System.Collections.Generic.List<ChangeSharp.VersionTargetConfig> DiscoverNewTargets() { }
+        public System.Collections.Generic.List<ChangeSharp.VersionTargetConfig> DiscoverVersionTargets() { }
+        public string? GetCreateFragmentError(string category, bool allowMajor) { }
+        public string GetCurrentBranch() { }
+        public System.Collections.Generic.IEnumerable<string> GetEffectiveVersionTargets() { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "Version",
+                "Body"})]
+        public System.ValueTuple<string, string> GetLatestRelease() { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string?[]?[] {
+                "Blocked",
+                "Message",
+                "CapExceeded"})]
+        public System.ValueTuple<bool, string, bool> GetReleaseGateResult(string? apiMinLevel, bool allowMajor) { }
+        public void GetStatus(out int fragmentCount, out ChangeSharp.ChangeSet mergedChangeSet, out string currentVersion, out string nextVersion) { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "Version",
+                "Body"})]
+        public System.ValueTuple<string, string> GetVersionRelease(string version) { }
+        public System.Collections.Generic.List<ChangeSharp.VersionTargetConfig> Initialize() { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "Allowed",
+                "CategoryImpact",
+                "MaxAllowed"})]
+        public System.ValueTuple<bool, int, int> IsCategoryWithinMaxImpact(string category) { }
+        public bool IsDefaultBranch() { }
+        public string[] ListFragmentFiles() { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "Prereleases",
+                "Warnings"})]
+        public System.ValueTuple<System.Collections.Generic.List<ChangeSharp.WorkspaceManager.PrereleaseInfo>, string[]> ListPrereleases() { }
+        public ChangeSharp.ChangeSharpConfig LoadConfig() { }
+        public string PromotePrerelease(string? branch = null, bool dryRun = false) { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string?[]?[] {
+                "Version",
+                "Warnings"})]
+        public System.ValueTuple<string, string[]> Release(System.DateTime releaseDate, bool dryRun = false, string? forcedVersion = null) { }
+        public int RemoveAllFragments() { }
+        public bool RemoveFragment(string relativePath) { }
+        public string SanitizeBranchName(string branchName, ChangeSharp.PreReleaseConfig? preReleaseConfig = null) { }
+        public bool ShouldDryRunByDefault() { }
+        public System.Collections.Generic.List<ChangeSharp.ValidationResult> Validate() { }
+        public class PrereleaseInfo
+        {
+            public PrereleaseInfo() { }
+            public string BaseVersion { get; set; }
+            public string Branch { get; set; }
+            public int Counter { get; set; }
+            public System.DateTime Timestamp { get; set; }
+            public string Version { get; set; }
+        }
+    }
+}
+namespace ChangeSharp.VersionPropagation
+{
+    public interface IVersionPropagationHandler
+    {
+        bool CanHandle(ChangeSharp.VersionTargetConfig target);
+        string? UpdateVersion(string basePath, ChangeSharp.VersionTargetConfig target, string nextVersion);
+    }
+    public class JsonVersionHandler : ChangeSharp.VersionPropagation.IVersionPropagationHandler
+    {
+        public JsonVersionHandler() { }
+        public bool CanHandle(ChangeSharp.VersionTargetConfig target) { }
+        public string? UpdateVersion(string basePath, ChangeSharp.VersionTargetConfig target, string nextVersion) { }
+    }
+    public class MSBuildVersionHandler : ChangeSharp.VersionPropagation.IVersionPropagationHandler
+    {
+        public MSBuildVersionHandler() { }
+        public bool CanHandle(ChangeSharp.VersionTargetConfig target) { }
+        public string? UpdateVersion(string basePath, ChangeSharp.VersionTargetConfig target, string nextVersion) { }
+    }
+    public class RegexVersionHandler : ChangeSharp.VersionPropagation.IVersionPropagationHandler
+    {
+        public RegexVersionHandler(System.TimeSpan? matchTimeout = default) { }
+        public bool CanHandle(ChangeSharp.VersionTargetConfig target) { }
+        public string? UpdateVersion(string basePath, ChangeSharp.VersionTargetConfig target, string nextVersion) { }
+    }
+}

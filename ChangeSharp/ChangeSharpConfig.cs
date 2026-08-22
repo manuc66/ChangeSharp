@@ -37,6 +37,10 @@ public class SemverPolicyConfig
         { "Fixed", "Patch" },
         { "Security", "Patch" }
     };
+
+    public string MaxImpact { get; set; } = "major";
+
+    public Dictionary<string, string> BranchMaxImpact { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public class PreReleaseConfig
