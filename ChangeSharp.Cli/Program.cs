@@ -31,6 +31,9 @@ class Program
     private static readonly Option<string> ApiMinLevelOption = new("--api-min-level") { Description = "Minimum API impact level (patch, minor, major). Fails if fragments are below this level." };
     private static readonly Option<bool> ApiMinLevelWarnOption = new("--api-min-level-warn") { Description = "Only warn if --api-min-level is not met, do not fail." };
     private static readonly Option<bool> DryRunOption = new("--dry-run") { Description = "Display what would happen without making any changes." };
+    private static readonly Option<bool> SeparateOption = new("--separate") { Description = "Create a new fragment file instead of appending to the open changelist." };
+    private static readonly Option<string> FragmentTargetOption = new("--fragment") { Description = "Append to a specific fragment file in the unreleased directory." };
+    private static readonly Option<string> ChangelistNameOption = new("--changelist") { Description = "Append to (or create) a deterministically named changelist file." };
 
     static async Task<int> Main(string[] args)
     {
@@ -114,190 +117,109 @@ class Program
             RemovedOption, DeprecatedOption, SecurityOption, BreakingOption,
             FileOption, AllowMajorOption, JsonOption,
         };
-
-        newCommand.SetAction(parseResult =>
-        {
-            var o = Out(parseResult);
-            string? message = parseResult.GetValue(MessageArgument);
-
-            string? messageFile = parseResult.GetValue(FileOption);
-            if (messageFile != null)
-            {
-                if (!File.Exists(messageFile))
-                    return o.Err($"File not found: {messageFile}", ExitCodeGenericError);
-                message = File.ReadAllText(messageFile).Trim();
-            }
-            else if (string.IsNullOrWhiteSpace(message))
-            {
-                message = Console.IsInputRedirected
-                    ? Console.In.ReadToEnd().Trim()
-                    : PromptForMessage();
-            }
-
-            if (string.IsNullOrWhiteSpace(message))
-                return o.Err("Description is required.", ExitCodeValidationError);
-
-            string category;
-            bool added = parseResult.GetValue(AddedOption);
-            bool changed = parseResult.GetValue(ChangedOption);
-            bool fixedOpt = parseResult.GetValue(FixedOption);
-            bool removed = parseResult.GetValue(RemovedOption);
-            bool deprecated = parseResult.GetValue(DeprecatedOption);
-            bool security = parseResult.GetValue(SecurityOption);
-            bool breaking = parseResult.GetValue(BreakingOption);
-            bool allowMajor = parseResult.GetValue(AllowMajorOption);
-
-            bool anyCategoryOptionProvided = added || changed || fixedOpt || removed || deprecated || security || breaking;
-
-            while (true)
-            {
-                if (anyCategoryOptionProvided)
-                {
-                    category = breaking ? "Breaking Changes"
-                             : removed ? "Removed"
-                             : changed ? "Changed"
-                             : deprecated ? "Deprecated"
-                             : fixedOpt ? "Fixed"
-                             : security ? "Security"
-                             : "Added";
-                }
-                else if (Console.IsInputRedirected)
-                {
-                    return o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
-                }
-                else
-                {
-                    category = PromptForCategory(allowMajor);
-                }
-
-                try
-                {
-                    var manager = new WorkspaceManager();
-                    string? blockReason = manager.GetCreateFragmentError(category, allowMajor);
-                    if (blockReason != null)
-                    {
-                        if (anyCategoryOptionProvided || Console.IsInputRedirected)
-                            return o.Err(blockReason, ExitCodeValidationError);
-                        Console.WriteLine();
-                        Console.WriteLine($"  {blockReason}");
-                        Console.WriteLine("  Choose another category, or rerun with --allow-major.");
-                        continue;
-                    }
-                    string filePath = manager.CreateFragment(message, category);
-                    return o.Ok(new
-                    {
-                        filename = Path.GetFileName(filePath),
-                        category,
-                        path = filePath
-                    }, () => Console.WriteLine($"Created fragment: {Path.GetFileName(filePath)} under category '{category}'"));
-                }
-                catch (Exception ex) { return o.Err(ex.Message); }
-            }
-        });
+        newCommand.SetAction(parseResult => RunFragmentAction(parseResult, Out(parseResult), forceSeparate: true));
         return newCommand;
     }
 
     private static Command BuildAddCommand()
     {
-        var separateOption = new Option<bool>("--separate") { Description = "Create a new fragment file instead of appending to the open changelist." };
-        var fragmentTargetOption = new Option<string>("--fragment") { Description = "Append to a specific fragment file in the unreleased directory." };
-        var changelistNameOption = new Option<string>("--changelist") { Description = "Append to (or create) a deterministically named changelist file." };
-
         var addCommand = new Command("add", "Add a change to the open changelist, or create a new fragment file.")
         {
             MessageArgument, AddedOption, ChangedOption, FixedOption,
             RemovedOption, DeprecatedOption, SecurityOption, BreakingOption,
-            FileOption, AllowMajorOption, separateOption, fragmentTargetOption, changelistNameOption, JsonOption,
+            FileOption, AllowMajorOption, SeparateOption, FragmentTargetOption, ChangelistNameOption, JsonOption,
         };
-
-        addCommand.SetAction(parseResult =>
-        {
-            var o = Out(parseResult);
-            string? message = parseResult.GetValue(MessageArgument);
-
-            string? messageFile = parseResult.GetValue(FileOption);
-            if (messageFile != null)
-            {
-                if (!File.Exists(messageFile))
-                    return o.Err($"File not found: {messageFile}", ExitCodeGenericError);
-                message = File.ReadAllText(messageFile).Trim();
-            }
-            else if (string.IsNullOrWhiteSpace(message))
-            {
-                message = Console.IsInputRedirected
-                    ? Console.In.ReadToEnd().Trim()
-                    : PromptForMessage();
-            }
-
-            if (string.IsNullOrWhiteSpace(message))
-                return o.Err("Description is required.", ExitCodeValidationError);
-
-            string category;
-            bool added = parseResult.GetValue(AddedOption);
-            bool changed = parseResult.GetValue(ChangedOption);
-            bool fixedOpt = parseResult.GetValue(FixedOption);
-            bool removed = parseResult.GetValue(RemovedOption);
-            bool deprecated = parseResult.GetValue(DeprecatedOption);
-            bool security = parseResult.GetValue(SecurityOption);
-            bool breaking = parseResult.GetValue(BreakingOption);
-            bool allowMajor = parseResult.GetValue(AllowMajorOption);
-            bool separate = parseResult.GetValue(separateOption);
-            string? fragmentTarget = parseResult.GetValue(fragmentTargetOption);
-            string? changelistName = parseResult.GetValue(changelistNameOption);
-
-            bool anyCategoryOptionProvided = added || changed || fixedOpt || removed || deprecated || security || breaking;
-
-            while (true)
-            {
-                if (anyCategoryOptionProvided)
-                {
-                    category = breaking ? "Breaking Changes"
-                             : removed ? "Removed"
-                             : changed ? "Changed"
-                             : deprecated ? "Deprecated"
-                             : fixedOpt ? "Fixed"
-                             : security ? "Security"
-                             : "Added";
-                }
-                else if (Console.IsInputRedirected)
-                {
-                    return o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
-                }
-                else
-                {
-                    category = PromptForCategory(allowMajor);
-                }
-
-                try
-                {
-                    var manager = new WorkspaceManager();
-                    string? blockReason = manager.GetCreateFragmentError(category, allowMajor);
-                    if (blockReason != null)
-                    {
-                        if (anyCategoryOptionProvided || Console.IsInputRedirected)
-                            return o.Err(blockReason, ExitCodeValidationError);
-                        Console.WriteLine();
-                        Console.WriteLine($"  {blockReason}");
-                        Console.WriteLine("  Choose another category, or rerun with --allow-major.");
-                        continue;
-                    }
-
-                    var (fragmentPath, appended, formattedCategory) = manager.AppendFragment(message, category, separate, fragmentTarget, changelistName);
-                    return o.Ok(new
-                    {
-                        filename = Path.GetFileName(fragmentPath),
-                        category = formattedCategory,
-                        appended,
-                        path = fragmentPath
-                    }, () => Console.WriteLine(appended
-                        ? $"Added to {Path.GetFileName(fragmentPath)} under '{formattedCategory}'"
-                        : $"Created fragment: {Path.GetFileName(fragmentPath)} under category '{formattedCategory}'"));
-                }
-                catch (Exception ex) { return o.Err(ex.Message); }
-            }
-        });
+        addCommand.SetAction(parseResult => RunFragmentAction(parseResult, Out(parseResult), forceSeparate: false));
         return addCommand;
     }
+
+    private static int RunFragmentAction(ParseResult parseResult, Output o, bool forceSeparate)
+    {
+        string? message = parseResult.GetValue(MessageArgument);
+
+        string? messageFile = parseResult.GetValue(FileOption);
+        if (messageFile != null)
+        {
+            if (!File.Exists(messageFile))
+                return o.Err($"File not found: {messageFile}", ExitCodeGenericError);
+            message = File.ReadAllText(messageFile).Trim();
+        }
+        else if (string.IsNullOrWhiteSpace(message))
+        {
+            message = Console.IsInputRedirected
+                ? Console.In.ReadToEnd().Trim()
+                : PromptForMessage();
+        }
+
+        if (string.IsNullOrWhiteSpace(message))
+            return o.Err("Description is required.", ExitCodeValidationError);
+
+        bool added = parseResult.GetValue(AddedOption);
+        bool allowMajor = parseResult.GetValue(AllowMajorOption);
+        bool separate = forceSeparate || parseResult.GetValue(SeparateOption);
+        string? fragmentTarget = forceSeparate ? null : parseResult.GetValue(FragmentTargetOption);
+        string? changelistName = forceSeparate ? null : parseResult.GetValue(ChangelistNameOption);
+
+        string? mappedCategory = CategoryFromFlags(
+            parseResult.GetValue(BreakingOption), parseResult.GetValue(RemovedOption),
+            parseResult.GetValue(ChangedOption), parseResult.GetValue(DeprecatedOption),
+            parseResult.GetValue(FixedOption), parseResult.GetValue(SecurityOption));
+
+        bool anyCategoryOptionProvided = added || mappedCategory != null;
+        string category = "";
+
+        while (true)
+        {
+            if (anyCategoryOptionProvided)
+            {
+                category = mappedCategory ?? "Added";
+            }
+            else if (Console.IsInputRedirected)
+            {
+                return o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
+            }
+            else
+            {
+                category = PromptForCategory(allowMajor);
+            }
+
+            try
+            {
+                var manager = new WorkspaceManager();
+                string? blockReason = manager.GetCreateFragmentError(category, allowMajor);
+                if (blockReason != null)
+                {
+                    if (anyCategoryOptionProvided || Console.IsInputRedirected)
+                        return o.Err(blockReason, ExitCodeValidationError);
+                    Console.WriteLine();
+                    Console.WriteLine($"  {blockReason}");
+                    Console.WriteLine("  Choose another category, or rerun with --allow-major.");
+                    continue;
+                }
+
+                var (fragmentPath, appended, formattedCategory) = manager.AppendFragment(message, category, separate, fragmentTarget, changelistName);
+                return o.Ok(new
+                {
+                    filename = Path.GetFileName(fragmentPath),
+                    category = formattedCategory,
+                    appended,
+                    path = fragmentPath
+                }, () => Console.WriteLine(appended
+                    ? $"Added to {Path.GetFileName(fragmentPath)} under '{formattedCategory}'"
+                    : $"Created fragment: {Path.GetFileName(fragmentPath)} under category '{formattedCategory}'"));
+            }
+            catch (Exception ex) { return o.Err(ex.Message); }
+        }
+    }
+
+    private static string? CategoryFromFlags(bool breaking, bool removed, bool changed, bool deprecated, bool fixedOpt, bool security) =>
+        breaking ? "Breaking Changes"
+        : removed ? "Removed"
+        : changed ? "Changed"
+        : deprecated ? "Deprecated"
+        : fixedOpt ? "Fixed"
+        : security ? "Security"
+        : null;
 
     private static Command BuildStatusCommand()
     {
@@ -390,20 +312,8 @@ class Program
                     }
                     else
                     {
-                        string? apiMinLevelValue = parseResult.GetValue(ApiMinLevelOption);
-                        if (apiMinLevelValue != null)
-                        {
-                            bool warnOnly = parseResult.GetValue(ApiMinLevelWarnOption);
-                            var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(apiMinLevelValue);
-                            if (!pass)
-                            {
-                                string message = $"API surface requires at least a '{apiMinLevelValue}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).";
-                                if (warnOnly)
-                                    o.Warn(message);
-                                else
-                                    return o.Err(message, ExitCodeValidationError);
-                            }
-                        }
+                        int? gateResult = CheckApiMinLevelGate(parseResult, manager, o);
+                        if (gateResult.HasValue) return gateResult.Value;
                     }
                 }
 
@@ -504,36 +414,7 @@ class Program
 
                 if (dryRun)
                 {
-                    return o.Ok(new
-                    {
-                        dryRun = true,
-                        currentVersion = current,
-                        nextVersion = next,
-                        changes = merged.ToChangelogString(),
-                        sections = merged.Sections.ToDictionary(kv => kv.Key, kv => kv.Value),
-                        fragmentCount = count,
-                        versionTargets = targets
-                    }, () =>
-                    {
-                        Console.WriteLine("[Dry Run] Release would perform the following actions:");
-                        Console.WriteLine($"- Update CHANGELOG.md with a new version section: [{next}]");
-                        Console.WriteLine($"- Add the following changes to CHANGELOG.md:");
-                        Console.WriteLine(merged.ToChangelogString());
-                        Console.WriteLine($"- Delete {count} fragment(s) from the unreleased directory.");
-
-                        if (targets.Any())
-                        {
-                            Console.WriteLine($"- Propagate version {next} to the following files:");
-                            foreach (var target in targets)
-                                Console.WriteLine($"  * {target}");
-                        }
-                        else
-                        {
-                            Console.WriteLine("- No version propagation targets configured.");
-                        }
-                        Console.WriteLine();
-                        Console.WriteLine("[Dry Run] No files were actually modified.");
-                    });
+                    return ShowDryRun(o, current, next, merged, count, targets);
                 }
 
                 string? apiMinLevelValue = parseResult.GetValue(ApiMinLevelOption);
@@ -693,80 +574,144 @@ class Program
             try
             {
                 var manager = new WorkspaceManager();
-                var files = manager.ListFragmentFiles();
-                var shortNames = files.Select(Path.GetFileName).ToArray();
+                var shortNames = manager.ListFragmentFiles().Select(Path.GetFileName).ToArray();
 
                 if (list)
-                {
-                    return o.Ok(new { fragments = shortNames }, () =>
-                    {
-                        if (shortNames.Length == 0)
-                            Console.WriteLine("No unreleased fragments found.");
-                        else
-                        {
-                            Console.WriteLine("Unreleased fragments:");
-                            foreach (var f in shortNames)
-                                Console.WriteLine($"  {f}");
-                        }
-                    });
-                }
+                    return ShowFragmentList(o, shortNames);
 
                 if (all)
-                {
-                    if (shortNames.Length == 0)
-                        return o.Ok(new { removed = 0 }, () => Console.WriteLine("No unreleased fragments found."));
-
-                    if (!yes)
-                    {
-                        Console.Error.WriteLine($"This will remove {shortNames.Length} fragment(s):");
-                        foreach (var f in shortNames)
-                            Console.Error.WriteLine($"  {f}");
-                        Console.Error.Write("Are you sure? (y/N): ");
-                        var response = Console.ReadLine()?.Trim().ToLowerInvariant();
-                        if (response != "y" && response != "yes")
-                            return o.Ok(new { removed = 0 }, () => Console.WriteLine("Removal cancelled."));
-                    }
-
-                    int count = manager.RemoveAllFragments();
-                    return o.Ok(new { removed = count },
-                        () => Console.WriteLine($"Removed {count} fragment(s)."));
-                }
+                    return RemoveAllFragments(manager, o, shortNames, yes);
 
                 if (fragment == null)
-                {
-                    if (shortNames.Length == 0)
-                        return o.Ok(new { fragments = Array.Empty<string>() },
-                            () => Console.WriteLine("No unreleased fragments found."));
+                    return ShowRemoveUsage(o, shortNames);
 
-                    return o.Ok(new { fragments = shortNames }, () =>
-                    {
-                        Console.WriteLine("Usage: changesharp remove <fragment>");
-                        Console.WriteLine("       changesharp remove --list");
-                        Console.WriteLine("       changesharp remove --all");
-                        Console.WriteLine();
-                        Console.WriteLine("Available fragments:");
-                        foreach (var f in shortNames)
-                            Console.WriteLine($"  {f}");
-                    });
-                }
-
-                string fullPath = files.FirstOrDefault(f =>
-                    Path.GetFileName(f).Equals(fragment, StringComparison.OrdinalIgnoreCase) ||
-                    f.EndsWith(fragment, StringComparison.OrdinalIgnoreCase)) ?? "";
-
-                if (string.IsNullOrEmpty(fullPath) || !manager.RemoveFragment(fullPath))
-                    return o.Err($"Fragment '{fragment}' not found.", ExitCodeGenericError);
-
-                return o.Ok(new { removed = true, fragment },
-                    () => Console.WriteLine($"Removed fragment: {fragment}"));
+                return RemoveSingleFragment(manager, o, fragment);
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
         return removeCommand;
     }
 
+    private static int ShowFragmentList(Output o, string[] shortNames) =>
+        o.Ok(new { fragments = shortNames }, () =>
+        {
+            if (shortNames.Length == 0)
+                Console.WriteLine("No unreleased fragments found.");
+            else
+            {
+                Console.WriteLine("Unreleased fragments:");
+                foreach (var f in shortNames)
+                    Console.WriteLine($"  {f}");
+            }
+        });
+
+    private static int RemoveAllFragments(WorkspaceManager manager, Output o, string[] shortNames, bool yes)
+    {
+        if (shortNames.Length == 0)
+            return o.Ok(new { removed = 0 }, () => Console.WriteLine("No unreleased fragments found."));
+
+        if (!yes)
+        {
+            Console.Error.WriteLine($"This will remove {shortNames.Length} fragment(s):");
+            foreach (var f in shortNames)
+                Console.Error.WriteLine($"  {f}");
+            Console.Error.Write("Are you sure? (y/N): ");
+            var response = Console.ReadLine()?.Trim().ToLowerInvariant();
+            if (response != "y" && response != "yes")
+                return o.Ok(new { removed = 0 }, () => Console.WriteLine("Removal cancelled."));
+        }
+
+        int count = manager.RemoveAllFragments();
+        return o.Ok(new { removed = count },
+            () => Console.WriteLine($"Removed {count} fragment(s)."));
+    }
+
+    private static int ShowRemoveUsage(Output o, string[] shortNames) =>
+        o.Ok(new { fragments = shortNames }, () =>
+        {
+            if (shortNames.Length == 0)
+            {
+                Console.WriteLine("No unreleased fragments found.");
+                return;
+            }
+
+            Console.WriteLine("Usage: changesharp remove <fragment>");
+            Console.WriteLine("       changesharp remove --list");
+            Console.WriteLine("       changesharp remove --all");
+            Console.WriteLine();
+            Console.WriteLine("Available fragments:");
+            foreach (var f in shortNames)
+                Console.WriteLine($"  {f}");
+        });
+
+    private static int RemoveSingleFragment(WorkspaceManager manager, Output o, string fragment)
+    {
+        var files = manager.ListFragmentFiles();
+        string fullPath = files.FirstOrDefault(f =>
+            Path.GetFileName(f).Equals(fragment, StringComparison.OrdinalIgnoreCase) ||
+            f.EndsWith(fragment, StringComparison.OrdinalIgnoreCase)) ?? "";
+
+        if (string.IsNullOrEmpty(fullPath) || !manager.RemoveFragment(fullPath))
+            return o.Err($"Fragment '{fragment}' not found.", ExitCodeGenericError);
+
+        return o.Ok(new { removed = true, fragment },
+            () => Console.WriteLine($"Removed fragment: {fragment}"));
+    }
+
     private static Output Out(ParseResult pr) =>
         new(pr.GetValue(JsonOption));
+
+    private static int? CheckApiMinLevelGate(ParseResult parseResult, WorkspaceManager manager, Output o)
+    {
+        string? apiMinLevelValue = parseResult.GetValue(ApiMinLevelOption);
+        if (apiMinLevelValue == null) return null;
+
+        bool warnOnly = parseResult.GetValue(ApiMinLevelWarnOption);
+        var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(apiMinLevelValue);
+        if (pass) return null;
+
+        string message = $"API surface requires at least a '{apiMinLevelValue}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).";
+        if (warnOnly)
+            o.Warn(message);
+        else
+            return o.Err(message, ExitCodeValidationError);
+        return null;
+    }
+
+    private static int ShowDryRun(Output o, string current, string next, ChangeSet merged, int count, IEnumerable<string> targets)
+    {
+        var targetsList = targets.ToList();
+        return o.Ok(new
+        {
+            dryRun = true,
+            currentVersion = current,
+            nextVersion = next,
+            changes = merged.ToChangelogString(),
+            sections = merged.Sections.ToDictionary(kv => kv.Key, kv => kv.Value),
+            fragmentCount = count,
+            versionTargets = targetsList
+        }, () =>
+        {
+            Console.WriteLine("[Dry Run] Release would perform the following actions:");
+            Console.WriteLine($"- Update CHANGELOG.md with a new version section: [{next}]");
+            Console.WriteLine("- Add the following changes to CHANGELOG.md:");
+            Console.WriteLine(merged.ToChangelogString());
+            Console.WriteLine($"- Delete {count} fragment(s) from the unreleased directory.");
+
+            if (targetsList.Any())
+            {
+                Console.WriteLine($"- Propagate version {next} to the following files:");
+                foreach (var target in targetsList)
+                    Console.WriteLine($"  * {target}");
+            }
+            else
+            {
+                Console.WriteLine("- No version propagation targets configured.");
+            }
+            Console.WriteLine();
+            Console.WriteLine("[Dry Run] No files were actually modified.");
+        });
+    }
 
     private static int CheckApiSurface(ParseResult parseResult, WorkspaceManager manager, Output o)
     {
