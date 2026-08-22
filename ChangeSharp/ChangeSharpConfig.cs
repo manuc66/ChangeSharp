@@ -37,6 +37,8 @@ public class SemverPolicyConfig
         { "Fixed", "Patch" },
         { "Security", "Patch" }
     };
+
+    public string MaxImpact { get; set; } = "major";
 }
 
 public class PreReleaseConfig

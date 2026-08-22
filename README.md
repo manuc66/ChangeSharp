@@ -39,7 +39,8 @@ See the [documentation site](https://manuc66.github.io/ChangeSharp/) — quick s
 - **AI-ready** — built-in MCP server for AI agent integration
 - **Version propagation** — MSBuild, JSON, and regex target handlers
 - **Pre-release channels** — branch-based pre-release workflows
-- **Safety gates** — `--api-min-level`, `--require-approval`, `--dry-run`
+- **Safety gates** — `--api-min-level` (floor), `SemverPolicy.MaxImpact` + `--allow-major` (cap), `--require-approval`, `--dry-run`
+- **Dogfooded API surface gate** — ChangeSharp gates its own CLI/MCP/library surfaces via committed baselines in `tests/public-api/`; see [API Surface Gate](docs/features/ApiSurfaceGate.md)
 
 ## License
 

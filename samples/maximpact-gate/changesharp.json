@@ -1,0 +1,14 @@
+{
+  "SemverPolicy": {
+    "MaxImpact": "minor",
+    "Mappings": {
+      "Breaking Changes": "Major",
+      "Removed": "Major",
+      "Changed": "Minor",
+      "Added": "Minor",
+      "Deprecated": "Minor",
+      "Fixed": "Patch",
+      "Security": "Patch"
+    }
+  }
+}

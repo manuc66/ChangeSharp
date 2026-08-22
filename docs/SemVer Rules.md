@@ -56,3 +56,35 @@ ChangeSharp compares the required level against the fragments' declared categori
 *   **CLI Tools**: Compare help output or command schemas.
 
 ChangeSharp does **not** perform the API diff itself — it only enforces the policy. See [ApiSurfaceGate](features/ApiSurfaceGate.md) for details.
+
+## ⛔ Maximum Impact Cap (`SemverPolicy.MaxImpact`)
+
+`--api-min-level` is a **floor**: it guarantees fragments are not lower than the real API impact. `SemverPolicy.MaxImpact` is the symmetric **cap**: it guarantees no fragment silently forces a Major bump when the team does not want one.
+
+```json
+{
+  "SemverPolicy": {
+    "MaxImpact": "minor"
+  }
+}
+```
+
+`MaxImpact` accepts `patch`, `minor`, or `major`. The default is `major`, which disables the cap entirely — existing projects are unaffected until they opt in.
+
+### Where it is enforced
+
+| Step | Behavior |
+| --- | --- |
+| `changesharp new` (flags) | Category above the cap → refused (exit 3) unless `--allow-major` |
+| `changesharp new` (interactive) | Blocked categories are marked `⚠ blocked (MaxImpact)` in the menu and re-prompted |
+| `changesharp validate` | Does **not** enforce the cap (format check only) |
+| `changesharp release` | Refused (exit 3) unless `--allow-major` — the production gate (human-in-the-loop) |
+
+```bash
+changesharp new --breaking              # ❌ refused above the cap
+changesharp new --breaking --allow-major # ✅ deliberate
+changesharp release                      # ❌ refused above the cap
+changesharp release --allow-major        # ✅ deliberate
+```
+
+The `--allow-major` flag is the explicit opt-in at both creation and release, so a Major requires two deliberate decisions. A runnable demo lives in `samples/maximpact-gate/`.

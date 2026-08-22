@@ -24,6 +24,27 @@ public class WorkspaceManagerTests
         }
     }
 
+    private void WriteConfig(string maxImpact)
+    {
+        string config = $$"""
+        {
+          "SemverPolicy": {
+            "MaxImpact": "{{maxImpact}}",
+            "Mappings": {
+              "Breaking Changes": "Major",
+              "Removed": "Major",
+              "Changed": "Minor",
+              "Added": "Minor",
+              "Deprecated": "Minor",
+              "Fixed": "Patch",
+              "Security": "Patch"
+            }
+          }
+        }
+        """;
+        File.WriteAllText(Path.Combine(_testDir, "changesharp.json"), config);
+    }
+
     [Test]
     public void Release_NormalWorkflow_Works()
     {
@@ -546,6 +567,152 @@ public class WorkspaceManagerTests
         manager.Initialize();
 
         Assert.Throws<ArgumentException>(() => manager.CheckApiMinLevel("foo"));
+    }
+
+    [Test]
+    public void CheckApiMaxLevel_NoFragments_AlwaysPasses()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+
+        var (pass, impact, name, maxAllowed, offending) = manager.CheckApiMaxLevel();
+
+        Assert.That(pass, Is.True);
+        Assert.That(impact, Is.EqualTo(0));
+        Assert.That(name, Is.EqualTo("none"));
+        Assert.That(maxAllowed, Is.EqualTo(2));
+        Assert.That(offending, Is.Empty);
+    }
+
+    [Test]
+    public void CheckApiMaxLevel_DefaultMajor_AllowsEverything()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        manager.CreateFragment("Breaking API change", "Breaking Changes");
+
+        var (pass, impact, name, maxAllowed, offending) = manager.CheckApiMaxLevel();
+
+        Assert.That(pass, Is.True);
+        Assert.That(impact, Is.EqualTo(3));
+        Assert.That(name, Is.EqualTo("major"));
+        Assert.That(maxAllowed, Is.EqualTo(3));
+        Assert.That(offending, Is.Empty);
+    }
+
+    [Test]
+    public void CheckApiMaxLevel_FixedFragment_PassesMinorCap()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+        manager.CreateFragment("Fix a bug", "Fixed");
+
+        var (pass, _, _, maxAllowed, offending) = manager.CheckApiMaxLevel();
+
+        Assert.That(pass, Is.True);
+        Assert.That(maxAllowed, Is.EqualTo(2));
+        Assert.That(offending, Is.Empty);
+    }
+
+    [Test]
+    public void CheckApiMaxLevel_BreakingFragment_FailsMinorCap()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+        manager.CreateFragment("Breaking API change", "Breaking Changes");
+
+        var (pass, impact, name, maxAllowed, offending) = manager.CheckApiMaxLevel();
+
+        Assert.That(pass, Is.False);
+        Assert.That(impact, Is.EqualTo(3));
+        Assert.That(name, Is.EqualTo("major"));
+        Assert.That(maxAllowed, Is.EqualTo(2));
+        Assert.That(offending, Is.EqualTo(new[] { "Breaking Changes" }));
+    }
+
+    [Test]
+    public void CheckApiMaxLevel_MixedFragments_ReportsOnlyOffendingCategories()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+        manager.CreateFragment("Fix a bug", "Fixed");
+        manager.CreateFragment("New feature", "Added");
+        manager.CreateFragment("Breaking API change", "Breaking Changes");
+
+        var (pass, _, _, _, offending) = manager.CheckApiMaxLevel();
+
+        Assert.That(pass, Is.False);
+        Assert.That(offending, Is.EqualTo(new[] { "Breaking Changes" }));
+    }
+
+    [Test]
+    public void CheckApiMaxLevel_InvalidMaxImpact_Throws()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("galactic");
+
+        Assert.Throws<ArgumentException>(() => manager.CheckApiMaxLevel());
+    }
+
+    [Test]
+    public void IsCategoryWithinMaxImpact_DefaultMajor_AllowsMajorCategories()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+
+        var (allowed, impact, maxAllowed) = manager.IsCategoryWithinMaxImpact("Breaking Changes");
+
+        Assert.That(allowed, Is.True);
+        Assert.That(impact, Is.EqualTo(3));
+        Assert.That(maxAllowed, Is.EqualTo(3));
+    }
+
+    [Test]
+    public void IsCategoryWithinMaxImpact_MinorCap_BlocksMajorCategories()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+
+        var (breakingAllowed, breakingImpact, maxAllowed) = manager.IsCategoryWithinMaxImpact("Breaking Changes");
+        Assert.That(breakingAllowed, Is.False);
+        Assert.That(breakingImpact, Is.EqualTo(3));
+        Assert.That(maxAllowed, Is.EqualTo(2));
+
+        var (removedAllowed, _, _) = manager.IsCategoryWithinMaxImpact("Removed");
+        Assert.That(removedAllowed, Is.False);
+
+        var (addedAllowed, _, _) = manager.IsCategoryWithinMaxImpact("Added");
+        Assert.That(addedAllowed, Is.True);
+    }
+
+    [Test]
+    public void IsCategoryWithinMaxImpact_UnknownCategory_Allowed()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("minor");
+
+        var (allowed, impact, maxAllowed) = manager.IsCategoryWithinMaxImpact("Nonsense");
+
+        Assert.That(allowed, Is.True);
+        Assert.That(impact, Is.EqualTo(0));
+        Assert.That(maxAllowed, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void IsCategoryWithinMaxImpact_InvalidMaxImpact_Throws()
+    {
+        var manager = new WorkspaceManager(_testDir);
+        manager.Initialize();
+        WriteConfig("galactic");
+
+        Assert.Throws<ArgumentException>(() => manager.IsCategoryWithinMaxImpact("Added"));
     }
 
     [Test]

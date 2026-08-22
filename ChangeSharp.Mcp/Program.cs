@@ -84,7 +84,10 @@ class Program
                                 inputSchema = new
                                 {
                                     type = "object",
-                                    properties = new { }
+                                    properties = new
+                                    {
+                                        apiMinLevel = new { type = "string", description = "Optional minimum API impact level (patch, minor, major). Fails if fragments are below this level." }
+                                    }
                                 }
                             },
                             new
@@ -96,7 +99,9 @@ class Program
                                     type = "object",
                                     properties = new
                                     {
-                                        dryRun = new { type = "boolean", description = "If true, only preview the changes without applying them." }
+                                        dryRun = new { type = "boolean", description = "If true, only preview the changes without applying them." },
+                                        allowMajor = new { type = "boolean", description = "Allow a release whose impact exceeds SemverPolicy.MaxImpact." },
+                                        apiMinLevel = new { type = "string", description = "Optional minimum API impact level (patch, minor, major). Fails if fragments are below this level." }
                                     }
                                 }
                             }
@@ -164,6 +169,26 @@ class Program
                     var validationResults = Manager.Validate();
                     if (validationResults.Count == 0 || validationResults.All(r => r.IsValid))
                     {
+                        string? apiMinLevel = args?["apiMinLevel"]?.ToString();
+                        if (apiMinLevel != null)
+                        {
+                            var (pass, maxImpact, maxLevelName) = Manager.CheckApiMinLevel(apiMinLevel);
+                            if (!pass)
+                            {
+                                return new
+                                {
+                                    content = new[]
+                                    {
+                                        new
+                                        {
+                                            type = "text",
+                                            text = $"API surface requires at least a '{apiMinLevel}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact})."
+                                        }
+                                    },
+                                    isError = true
+                                };
+                            }
+                        }
                         return new { content = new[] { new { type = "text", text = "All fragments are valid." } } };
                     }
                     var errors = string.Join("\n", validationResults.Where(r => !r.IsValid).Select(r => $"- {r.FilePath}: {string.Join(", ", r.Errors)}"));
@@ -182,9 +207,52 @@ class Program
 
                 case "perform_release":
                     bool dryRun = args?["dryRun"]?.GetValue<bool>() ?? false;
+                    bool allowMajor = args?["allowMajor"]?.GetValue<bool>() ?? false;
 
                     if (!dryRun)
                     {
+                        string? apiMinLevel = args?["apiMinLevel"]?.ToString();
+                        if (apiMinLevel != null)
+                        {
+                            var (pass, _, _) = Manager.CheckApiMinLevel(apiMinLevel);
+                            if (!pass)
+                            {
+                                return new
+                                {
+                                    content = new[]
+                                    {
+                                        new
+                                        {
+                                            type = "text",
+                                            text = $"API surface requires at least a '{apiMinLevel}' bump, but fragments are below this level."
+                                        }
+                                    },
+                                    isError = true
+                                };
+                            }
+                        }
+
+                        if (!allowMajor)
+                        {
+                            var (withinCap, maxImpact, maxLevelName, _, offendingCategories) = Manager.CheckApiMaxLevel();
+                            if (!withinCap)
+                            {
+                                string cats = offendingCategories.Length > 0 ? $" ({string.Join(", ", offendingCategories)})" : "";
+                                return new
+                                {
+                                    content = new[]
+                                    {
+                                        new
+                                        {
+                                            type = "text",
+                                            text = $"Release would bump to '{maxLevelName}' (level {maxImpact}), above the configured SemverPolicy.MaxImpact{cats}. Set allowMajor: true to proceed."
+                                        }
+                                    },
+                                    isError = true
+                                };
+                            }
+                        }
+
                         // Check Security config from changesharp.json
                         var config = Manager.LoadConfig();
                         if (config.Security.RequireApproval || config.Security.AllowAgentRelease == false)

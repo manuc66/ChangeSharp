@@ -83,12 +83,13 @@ class Program
         var breakingOption   = new Option<bool>("--breaking")   { Description = "Mark change as Breaking Changes." };
 
         var fileOption = new Option<string>("--file") { Description = "Read the change description from a file instead of the message argument, stdin, or a prompt." };
+        var allowMajorOption = new Option<bool>("--allow-major") { Description = "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact." };
 
         var newCommand = new Command("new", "Create a new unreleased changelog fragment.")
         {
             messageArgument, addedOption, changedOption, fixedOption,
             removedOption, deprecatedOption, securityOption, breakingOption,
-            fileOption, jsonOption,
+            fileOption, allowMajorOption, jsonOption,
         };
 
         newCommand.SetAction(parseResult =>
@@ -121,40 +122,58 @@ class Program
             bool deprecated = parseResult.GetValue(deprecatedOption);
             bool security = parseResult.GetValue(securityOption);
             bool breaking = parseResult.GetValue(breakingOption);
+            bool allowMajor = parseResult.GetValue(allowMajorOption);
 
             bool anyCategoryOptionProvided = added || changed || fixedOpt || removed || deprecated || security || breaking;
 
-            if (anyCategoryOptionProvided)
+            while (true)
             {
-                category = breaking ? "Breaking Changes"
-                         : removed ? "Removed"
-                         : changed ? "Changed"
-                         : deprecated ? "Deprecated"
-                         : fixedOpt ? "Fixed"
-                         : security ? "Security"
-                         : "Added";
-            }
-            else if (Console.IsInputRedirected)
-            {
-                return o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
-            }
-            else
-            {
-                category = PromptForCategory();
-            }
-
-            try
-            {
-                var manager = new WorkspaceManager();
-                string filePath = manager.CreateFragment(message, category);
-                return o.Ok(new
+                if (anyCategoryOptionProvided)
                 {
-                    filename = Path.GetFileName(filePath),
-                    category,
-                    path = filePath
-                }, () => Console.WriteLine($"Created fragment: {Path.GetFileName(filePath)} under category '{category}'"));
+                    category = breaking ? "Breaking Changes"
+                             : removed ? "Removed"
+                             : changed ? "Changed"
+                             : deprecated ? "Deprecated"
+                             : fixedOpt ? "Fixed"
+                             : security ? "Security"
+                             : "Added";
+                }
+                else if (Console.IsInputRedirected)
+                {
+                    return o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
+                }
+                else
+                {
+                    category = PromptForCategory(allowMajor);
+                }
+
+                try
+                {
+                    var manager = new WorkspaceManager();
+                    if (!allowMajor)
+                    {
+                        var (allowed, categoryImpact, maxAllowed) = manager.IsCategoryWithinMaxImpact(category);
+                        if (!allowed)
+                        {
+                            string blockReason = $"Category '{category}' requires a {ImpactLevelName(categoryImpact)} bump, above the configured SemverPolicy.MaxImpact ({ImpactLevelName(maxAllowed)}).";
+                            if (anyCategoryOptionProvided || Console.IsInputRedirected)
+                                return o.Err($"{blockReason} Use --allow-major to override.", ExitCodeValidationError);
+                            Console.WriteLine();
+                            Console.WriteLine($"  {blockReason}");
+                            Console.WriteLine("  Choose another category, or rerun with --allow-major.");
+                            continue;
+                        }
+                    }
+                    string filePath = manager.CreateFragment(message, category);
+                    return o.Ok(new
+                    {
+                        filename = Path.GetFileName(filePath),
+                        category,
+                        path = filePath
+                    }, () => Console.WriteLine($"Created fragment: {Path.GetFileName(filePath)} under category '{category}'"));
+                }
+                catch (Exception ex) { return o.Err(ex.Message); }
             }
-            catch (Exception ex) { return o.Err(ex.Message); }
         });
         rootCommand.Add(newCommand);
 
@@ -283,10 +302,11 @@ class Program
         var dryRunOption = new Option<bool>("--dry-run") { Description = "Display what would happen without making any changes." };
         var allowEmptyOption = new Option<bool>("--allow-empty") { Description = "Exit with success even if no unreleased fragments are found." };
         var requireApprovalOption = new Option<bool>("--require-approval") { Description = "Require explicit approval (CHANGESHARP_ALLOW_UNSAFE_RELEASE) to proceed." };
+        var allowMajorReleaseOption = new Option<bool>("--allow-major") { Description = "Allow a release whose impact exceeds SemverPolicy.MaxImpact." };
         var releaseCommand = new Command("release", "Aggregate fragments, bump version, update CHANGELOG.md, and clean up.")
         {
             dryRunOption, allowEmptyOption, requireApprovalOption,
-            apiMinLevelOption, apiMinLevelWarnOption, jsonOption
+            apiMinLevelOption, apiMinLevelWarnOption, allowMajorReleaseOption, jsonOption
         };
         releaseCommand.SetAction(parseResult =>
         {
@@ -370,6 +390,9 @@ class Program
 
                 int? apiResult = CheckApiMinLevel(parseResult, manager, apiMinLevelOption, apiMinLevelWarnOption, o);
                 if (apiResult.HasValue) return apiResult.Value;
+
+                int? maxResult = CheckApiMaxLevel(parseResult, manager, allowMajorReleaseOption, o);
+                if (maxResult.HasValue) return maxResult.Value;
 
                 var (nextVersion, releaseWarnings) = manager.Release(DateTime.Today, dryRun);
                 foreach (var w in releaseWarnings)
@@ -603,13 +626,27 @@ class Program
         return o.Err(message, ExitCodeValidationError);
     }
 
+    private static int? CheckApiMaxLevel(ParseResult parseResult, WorkspaceManager manager,
+        Option<bool> allowMajorOption, Output o)
+    {
+        bool allowMajor = parseResult.GetValue(allowMajorOption);
+        if (allowMajor) return null;
+
+        var (pass, maxImpact, maxLevelName, maxAllowed, offendingCategories) = manager.CheckApiMaxLevel();
+        if (pass) return null;
+
+        string categories = offendingCategories.Length > 0 ? $" ({string.Join(", ", offendingCategories)})" : "";
+        string message = $"Release would bump to '{maxLevelName}' (level {maxImpact}), above the configured SemverPolicy.MaxImpact ({ImpactLevelName(maxAllowed)}){categories}. Use --allow-major to proceed.";
+        return o.Err(message, ExitCodeValidationError);
+    }
+
     private static string? PromptForMessage()
     {
         Console.Write("Enter a description for the change: ");
         return Console.ReadLine();
     }
 
-    private static string PromptForCategory()
+    private static string PromptForCategory(bool allowMajor)
     {
         var categories = new (string Name, string Description)[]
         {
@@ -622,15 +659,23 @@ class Program
             ("Breaking Changes", "Backward-incompatible change")
         };
 
-        Dictionary<string, string>? impacts = null;
+        SemverPolicyConfig? policy = null;
         try
         {
-            impacts = new WorkspaceManager().LoadConfig().SemverPolicy.Mappings;
+            policy = new WorkspaceManager().LoadConfig().SemverPolicy;
         }
         catch
         {
             // impact display is best-effort
         }
+
+        int maxAllowed = policy == null ? 3 : NextVersionComputer.ParseImpact(policy.MaxImpact);
+
+        string? impactOf(string name) =>
+            policy?.Mappings.TryGetValue(name, out var v) == true ? v : null;
+
+        bool isBlocked(string name) =>
+            !allowMajor && impactOf(name) is { } impact && NextVersionComputer.ParseImpact(impact) > maxAllowed;
 
         int selected = 0;
         Console.WriteLine("Select a category (↑/↓ to navigate, Enter to confirm, Esc to cancel, 1-7 to jump):");
@@ -639,7 +684,8 @@ class Program
             for (int i = 0; i < categories.Length; i++)
             {
                 Console.CursorLeft = 0;
-                string impact = impacts != null && impacts.TryGetValue(categories[i].Name, out var v) ? $" ({v})" : "";
+                string impact = impactOf(categories[i].Name) is { } v ? $" ({v})" : "";
+                string blocked = isBlocked(categories[i].Name) ? " ⚠ blocked (MaxImpact)" : "";
                 if (i == selected)
                 {
                     Console.Write("> ");
@@ -647,11 +693,11 @@ class Program
                     Console.ForegroundColor = ConsoleColor.White;
                     Console.Write(categories[i].Name.PadRight(18));
                     Console.ResetColor();
-                    Console.WriteLine($"{impact} — {categories[i].Description}");
+                    Console.WriteLine($"{impact}{blocked} — {categories[i].Description}");
                 }
                 else
                 {
-                    Console.WriteLine($"  {categories[i].Name.PadRight(18)}{impact} — {categories[i].Description}");
+                    Console.WriteLine($"  {categories[i].Name.PadRight(18)}{impact}{blocked} — {categories[i].Description}");
                 }
             }
 
@@ -684,6 +730,14 @@ class Program
 
         return categories[selected].Name;
     }
+
+    private static string ImpactLevelName(int impact) => impact switch
+    {
+        3 => "major",
+        2 => "minor",
+        1 => "patch",
+        _ => "none"
+    };
 }
 
 readonly struct Output

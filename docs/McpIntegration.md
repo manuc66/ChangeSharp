@@ -8,8 +8,10 @@ The MCP server exposes the following tools:
 
 - `get_status`: Get the count of pending fragments, the current version, and the next calculated version.
 - `create_fragment`: Create a new change fragment with a message and a category.
-- `validate_fragments`: Ensure all pending fragments follow the correct format.
-- `perform_release`: Execute a release, aggregate changes into the changelog, and bump project versions.
+- `validate_fragments`: Ensure all pending fragments follow the correct format. Optional `apiMinLevel` (`patch` | `minor` | `major`) mirrors the CLI `--api-min-level` gate: fails if the fragments' declared impact is below this level.
+- `perform_release`: Execute a release, aggregate changes into the changelog, and bump project versions. Mirrors the CLI safety gates: optional `allowMajor` (bypass `SemverPolicy.MaxImpact` cap) and optional `apiMinLevel`.
+
+The safety gates exposed by the CLI (`--api-min-level`, `--allow-major` / `SemverPolicy.MaxImpact`) behave identically through the MCP tools.
 
 > **Security Warning**: In enterprise environments, AI agents should NOT be allowed to perform a release without human approval. It is highly recommended to use the `--dry-run` flag or implement a mandatory approval gate in your CI/CD pipeline before the final release is pushed.
 
