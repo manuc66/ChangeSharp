@@ -663,54 +663,54 @@ class Program
         Console.WriteLine("Select a category (↑/↓ to navigate, Enter to confirm, Esc to cancel, 1-7 to jump):");
         while (true)
         {
-            for (int i = 0; i < categories.Length; i++)
-            {
-                Console.CursorLeft = 0;
-                string impact = impactOf(categories[i].Name) is { } v ? $" ({v})" : "";
-                string blocked = isBlocked(categories[i].Name) ? " ⚠ blocked (MaxImpact)" : "";
-                if (i == selected)
-                {
-                    Console.Write("> ");
-                    Console.BackgroundColor = ConsoleColor.DarkBlue;
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.Write(categories[i].Name.PadRight(18));
-                    Console.ResetColor();
-                    Console.WriteLine($"{impact}{blocked} — {categories[i].Description}");
-                }
-                else
-                {
-                    Console.WriteLine($"  {categories[i].Name.PadRight(18)}{impact}{blocked} — {categories[i].Description}");
-                }
-            }
-
+            RenderCategoryMenu(categories, selected, impactOf, isBlocked);
             var key = Console.ReadKey(true);
-            if (key.Key == ConsoleKey.UpArrow && selected > 0)
+            var next = ApplyCategoryKey(key, categories.Length, selected);
+            if (next.IsFinal)
             {
-                selected--;
-            }
-            else if (key.Key == ConsoleKey.DownArrow && selected < categories.Length - 1)
-            {
-                selected++;
-            }
-            else if (key.Key == ConsoleKey.Enter)
-            {
+                selected = next.Selected;
                 break;
             }
-            else if (key.Key == ConsoleKey.Escape)
-            {
-                selected = 0;
-                break;
-            }
-            else if (key.Key >= ConsoleKey.D1 && key.Key <= ConsoleKey.D7)
-            {
-                selected = key.Key - ConsoleKey.D1;
-                break;
-            }
-
+            selected = next.Selected;
             Console.CursorTop -= categories.Length;
         }
 
         return categories[selected].Name;
+    }
+
+    private static void RenderCategoryMenu(
+        (string Name, string Description)[] categories, int selected,
+        Func<string, string?> impactOf, Func<string, bool> isBlocked)
+    {
+        for (int i = 0; i < categories.Length; i++)
+        {
+            Console.CursorLeft = 0;
+            string impact = impactOf(categories[i].Name) is { } v ? $" ({v})" : "";
+            string blocked = isBlocked(categories[i].Name) ? " ⚠ blocked (MaxImpact)" : "";
+            if (i == selected)
+            {
+                Console.Write("> ");
+                Console.BackgroundColor = ConsoleColor.DarkBlue;
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.Write(categories[i].Name.PadRight(18));
+                Console.ResetColor();
+                Console.WriteLine($"{impact}{blocked} — {categories[i].Description}");
+            }
+            else
+            {
+                Console.WriteLine($"  {categories[i].Name.PadRight(18)}{impact}{blocked} — {categories[i].Description}");
+            }
+        }
+    }
+
+    private static (bool IsFinal, int Selected) ApplyCategoryKey(ConsoleKeyInfo key, int count, int selected)
+    {
+        if (key.Key == ConsoleKey.UpArrow && selected > 0) return (false, selected - 1);
+        if (key.Key == ConsoleKey.DownArrow && selected < count - 1) return (false, selected + 1);
+        if (key.Key == ConsoleKey.Escape) return (true, 0);
+        if (key.Key >= ConsoleKey.D1 && key.Key <= ConsoleKey.D7) return (true, key.Key - ConsoleKey.D1);
+        if (key.Key == ConsoleKey.Enter) return (true, selected);
+        return (false, selected);
     }
 }
 
