@@ -135,16 +135,46 @@ class Program
 
     private static int RunFragmentAction(ParseResult parseResult, Output o, bool forceSeparate)
     {
-        string? message = parseResult.GetValue(MessageArgument);
+        var (message, messageError) = ResolveFragmentMessage(parseResult, o);
+        if (messageError.HasValue) return messageError.Value;
 
+        string? mappedCategory = CategoryFromFlags(
+            parseResult.GetValue(BreakingOption), parseResult.GetValue(RemovedOption),
+            parseResult.GetValue(ChangedOption), parseResult.GetValue(DeprecatedOption),
+            parseResult.GetValue(FixedOption), parseResult.GetValue(SecurityOption));
+
+        bool anyFlagCategory = parseResult.GetValue(AddedOption) || mappedCategory != null;
+        bool allowMajor = parseResult.GetValue(AllowMajorOption);
+        bool separate = forceSeparate || parseResult.GetValue(SeparateOption);
+        string? fragmentTarget = forceSeparate ? null : parseResult.GetValue(FragmentTargetOption);
+        string? changelistName = forceSeparate ? null : parseResult.GetValue(ChangelistNameOption);
+
+        while (true)
+        {
+            string category = ChooseCategory(parseResult, o, allowMajor, anyFlagCategory, mappedCategory, out int? categoryError);
+            if (categoryError.HasValue) return categoryError.Value;
+
+            int result = TryAppendFragment(o, message, category, allowMajor, anyFlagCategory, separate, fragmentTarget, changelistName);
+            if (result != RetryInteractive)
+                return result;
+        }
+    }
+
+    private const int RetryInteractive = -1;
+
+    private static (string? Message, int? Error) ResolveFragmentMessage(ParseResult parseResult, Output o)
+    {
+        string? message = parseResult.GetValue(MessageArgument);
         string? messageFile = parseResult.GetValue(FileOption);
+
         if (messageFile != null)
         {
             if (!File.Exists(messageFile))
-                return o.Err($"File not found: {messageFile}", ExitCodeGenericError);
-            message = File.ReadAllText(messageFile).Trim();
+                return (null, o.Err($"File not found: {messageFile}", ExitCodeGenericError));
+            return (File.ReadAllText(messageFile).Trim(), null);
         }
-        else if (string.IsNullOrWhiteSpace(message))
+
+        if (string.IsNullOrWhiteSpace(message))
         {
             message = Console.IsInputRedirected
                 ? Console.In.ReadToEnd().Trim()
@@ -152,64 +182,55 @@ class Program
         }
 
         if (string.IsNullOrWhiteSpace(message))
-            return o.Err("Description is required.", ExitCodeValidationError);
+            return (null, o.Err("Description is required.", ExitCodeValidationError));
 
-        bool added = parseResult.GetValue(AddedOption);
-        bool allowMajor = parseResult.GetValue(AllowMajorOption);
-        bool separate = forceSeparate || parseResult.GetValue(SeparateOption);
-        string? fragmentTarget = forceSeparate ? null : parseResult.GetValue(FragmentTargetOption);
-        string? changelistName = forceSeparate ? null : parseResult.GetValue(ChangelistNameOption);
+        return (message, null);
+    }
 
-        string? mappedCategory = CategoryFromFlags(
-            parseResult.GetValue(BreakingOption), parseResult.GetValue(RemovedOption),
-            parseResult.GetValue(ChangedOption), parseResult.GetValue(DeprecatedOption),
-            parseResult.GetValue(FixedOption), parseResult.GetValue(SecurityOption));
+    private static string ChooseCategory(ParseResult parseResult, Output o, bool allowMajor, bool anyFlagCategory, string? mappedCategory, out int? error)
+    {
+        error = null;
 
-        bool anyCategoryOptionProvided = added || mappedCategory != null;
-        string category = "";
+        if (anyFlagCategory)
+            return mappedCategory ?? "Added";
 
-        while (true)
+        if (Console.IsInputRedirected)
         {
-            if (anyCategoryOptionProvided)
-            {
-                category = mappedCategory ?? "Added";
-            }
-            else if (Console.IsInputRedirected)
-            {
-                return o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
-            }
-            else
-            {
-                category = PromptForCategory(allowMajor);
-            }
-
-            try
-            {
-                var manager = new WorkspaceManager();
-                string? blockReason = manager.GetCreateFragmentError(category, allowMajor);
-                if (blockReason != null)
-                {
-                    if (anyCategoryOptionProvided || Console.IsInputRedirected)
-                        return o.Err(blockReason, ExitCodeValidationError);
-                    Console.WriteLine();
-                    Console.WriteLine($"  {blockReason}");
-                    Console.WriteLine("  Choose another category, or rerun with --allow-major.");
-                    continue;
-                }
-
-                var (fragmentPath, appended, formattedCategory) = manager.AppendFragment(message, category, separate, fragmentTarget, changelistName);
-                return o.Ok(new
-                {
-                    filename = Path.GetFileName(fragmentPath),
-                    category = formattedCategory,
-                    appended,
-                    path = fragmentPath
-                }, () => Console.WriteLine(appended
-                    ? $"Added to {Path.GetFileName(fragmentPath)} under '{formattedCategory}'"
-                    : $"Created fragment: {Path.GetFileName(fragmentPath)} under category '{formattedCategory}'"));
-            }
-            catch (Exception ex) { return o.Err(ex.Message); }
+            error = o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
+            return "";
         }
+
+        return PromptForCategory(allowMajor);
+    }
+
+    private static int TryAppendFragment(Output o, string message, string category, bool allowMajor, bool anyFlagCategory, bool separate, string? fragmentTarget, string? changelistName)
+    {
+        try
+        {
+            var manager = new WorkspaceManager();
+            string? blockReason = manager.GetCreateFragmentError(category, allowMajor);
+            if (blockReason != null)
+            {
+                if (anyFlagCategory || Console.IsInputRedirected)
+                    return o.Err(blockReason, ExitCodeValidationError);
+                Console.WriteLine();
+                Console.WriteLine($"  {blockReason}");
+                Console.WriteLine("  Choose another category, or rerun with --allow-major.");
+                return RetryInteractive;
+            }
+
+            var (fragmentPath, appended, formattedCategory) = manager.AppendFragment(message, category, separate, fragmentTarget, changelistName);
+            return o.Ok(new
+            {
+                filename = Path.GetFileName(fragmentPath),
+                category = formattedCategory,
+                appended,
+                path = fragmentPath
+            }, () => Console.WriteLine(appended
+                ? $"Added to {Path.GetFileName(fragmentPath)} under '{formattedCategory}'"
+                : $"Created fragment: {Path.GetFileName(fragmentPath)} under category '{formattedCategory}'"));
+        }
+        catch (Exception ex) { return o.Err(ex.Message); }
     }
 
     private static string? CategoryFromFlags(bool breaking, bool removed, bool changed, bool deprecated, bool fixedOpt, bool security) =>
@@ -319,42 +340,42 @@ class Program
 
                 var jsonResults = results.Select(r => new { file = r.FilePath, valid = r.IsValid, errors = r.Errors }).ToList();
 
-                if (hasErrors)
-                {
-                    return o.Err("Validation failed.", ExitCodeValidationError, new
-                    {
-                        fragmentsValidated = results.Count,
-                        results = jsonResults
-                    }, () =>
-                    {
-                        foreach (var r in results)
-                        {
-                            if (r.IsValid)
-                                Console.WriteLine($"\u2713 {r.FilePath}: Valid");
-                            else
-                            {
-                                Console.WriteLine($"\u2717 {r.FilePath}: Invalid");
-                                foreach (var e in r.Errors)
-                                    Console.WriteLine($"  - {e}");
-                            }
-                        }
-                        Console.WriteLine($"\n{results.Count(r => !r.IsValid)} fragment(s) failed validation.");
-                    });
-                }
-
-                return o.Ok(new
-                {
-                    fragmentsValidated = results.Count,
-                    results = jsonResults
-                }, () =>
-                {
-                    Console.WriteLine("All fragments are valid.");
-                });
+                return hasErrors
+                    ? ReportValidationErrors(o, results, jsonResults)
+                    : ReportValidationSuccess(o, results, jsonResults);
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
         return validateCommand;
     }
+
+    private static int ReportValidationErrors(Output o, List<ValidationResult> results, object jsonResults) =>
+        o.Err("Validation failed.", ExitCodeValidationError, new
+        {
+            fragmentsValidated = results.Count,
+            results = jsonResults
+        }, () =>
+        {
+            foreach (var r in results)
+            {
+                if (r.IsValid)
+                    Console.WriteLine($"\u2713 {r.FilePath}: Valid");
+                else
+                {
+                    Console.WriteLine($"\u2717 {r.FilePath}: Invalid");
+                    foreach (var e in r.Errors)
+                        Console.WriteLine($"  - {e}");
+                }
+            }
+            Console.WriteLine($"\n{results.Count(r => !r.IsValid)} fragment(s) failed validation.");
+        });
+
+    private static int ReportValidationSuccess(Output o, List<ValidationResult> results, object jsonResults) =>
+        o.Ok(new
+        {
+            fragmentsValidated = results.Count,
+            results = jsonResults
+        }, () => Console.WriteLine("All fragments are valid."));
 
     private static Command BuildReleaseCommand()
     {
@@ -369,33 +390,12 @@ class Program
         releaseCommand.SetAction(parseResult =>
         {
             var o = Out(parseResult);
-            bool dryRun = parseResult.GetValue(DryRunOption);
+            bool dryRun = ResolveDryRun(parseResult, o);
             bool allowEmpty = parseResult.GetValue(allowEmptyOption);
             bool requireApproval = parseResult.GetValue(requireApprovalOption);
 
-            if (!dryRun)
-            {
-                try
-                {
-                    var manager = new WorkspaceManager();
-                    if (manager.ShouldDryRunByDefault())
-                    {
-                        dryRun = true;
-                        o.Warn("Security.DryRunByDefault is enabled; running in dry-run mode.");
-                    }
-                }
-                catch (InvalidOperationException ex)
-                {
-                    o.Warn($"Could not read config to check Security.DryRunByDefault: {ex.Message}");
-                }
-            }
-
-            if (requireApproval && !dryRun)
-            {
-                string? envAllow = Environment.GetEnvironmentVariable("CHANGESHARP_ALLOW_UNSAFE_RELEASE");
-                if (envAllow != "true")
-                    return o.Err("Release blocked by --require-approval. Set CHANGESHARP_ALLOW_UNSAFE_RELEASE=true to proceed.", ExitCodeGenericError, new { blockedBy = "approval_gate" });
-            }
+            int? approvalError = CheckApproval(requireApproval, dryRun, o);
+            if (approvalError.HasValue) return approvalError.Value;
 
             try
             {
@@ -417,27 +417,18 @@ class Program
                     return ShowDryRun(o, current, next, merged, count, targets);
                 }
 
-                string? apiMinLevelValue = parseResult.GetValue(ApiMinLevelOption);
-                bool warnOnly = parseResult.GetValue(ApiMinLevelWarnOption);
-                bool allowMajor = parseResult.GetValue(allowMajorReleaseOption);
+                var gate = manager.GetReleaseGateResult(
+                    parseResult.GetValue(ApiMinLevelOption), parseResult.GetValue(allowMajorReleaseOption));
 
-                var gate = manager.GetReleaseGateResult(apiMinLevelValue, allowMajor);
                 if (gate.Blocked)
                 {
+                    bool warnOnly = parseResult.GetValue(ApiMinLevelWarnOption);
                     if (gate.CapExceeded || !warnOnly)
                         return o.Err(gate.Message, ExitCodeValidationError);
                     o.Warn(gate.Message);
                 }
 
-                var (nextVersion, releaseWarnings) = manager.Release(DateTime.Today, dryRun);
-                var allWarnings = releaseWarnings.Append(gate.CapExceeded ? "Major bump explicitly allowed via --allow-major." : null)
-                    .Where(w => w != null)
-                    .Cast<string>()
-                    .ToList();
-                foreach (var w in allWarnings)
-                    Console.Error.WriteLine($"Warning: {w}");
-                return o.Ok(new { releasedVersion = nextVersion, warnings = allWarnings },
-                    () => Console.WriteLine($"Release successful! New version: {nextVersion}"));
+                return FinishRelease(manager, o, dryRun, gate);
             }
             catch (InvalidOperationException ex) when (ex.Message.Contains("Conflict"))
             {
@@ -446,6 +437,51 @@ class Program
             catch (Exception ex) { return o.Err(ex.Message); }
         });
         return releaseCommand;
+    }
+
+    private static bool ResolveDryRun(ParseResult parseResult, Output o)
+    {
+        bool dryRun = parseResult.GetValue(DryRunOption);
+        if (dryRun) return true;
+
+        try
+        {
+            var manager = new WorkspaceManager();
+            if (manager.ShouldDryRunByDefault())
+            {
+                o.Warn("Security.DryRunByDefault is enabled; running in dry-run mode.");
+                return true;
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            o.Warn($"Could not read config to check Security.DryRunByDefault: {ex.Message}");
+        }
+
+        return false;
+    }
+
+    private static int? CheckApproval(bool requireApproval, bool dryRun, Output o)
+    {
+        if (!requireApproval || dryRun) return null;
+
+        string? envAllow = Environment.GetEnvironmentVariable("CHANGESHARP_ALLOW_UNSAFE_RELEASE");
+        if (envAllow != "true")
+            return o.Err("Release blocked by --require-approval. Set CHANGESHARP_ALLOW_UNSAFE_RELEASE=true to proceed.", ExitCodeGenericError, new { blockedBy = "approval_gate" });
+        return null;
+    }
+
+    private static int FinishRelease(WorkspaceManager manager, Output o, bool dryRun, (bool Blocked, string Message, bool CapExceeded) gate)
+    {
+        var (nextVersion, releaseWarnings) = manager.Release(DateTime.Today, dryRun);
+        var allWarnings = releaseWarnings.Append(gate.CapExceeded ? "Major bump explicitly allowed via --allow-major." : null)
+            .Where(w => w != null)
+            .Cast<string>()
+            .ToList();
+        foreach (var w in allWarnings)
+            Console.Error.WriteLine($"Warning: {w}");
+        return o.Ok(new { releasedVersion = nextVersion, warnings = allWarnings },
+            () => Console.WriteLine($"Release successful! New version: {nextVersion}"));
     }
 
     private static Command BuildPublishCommand()
