@@ -13,6 +13,25 @@ class Program
     internal const int ExitCodeValidationError = 3;
     internal const int ExitCodeConflict = 4;
 
+    private static readonly Option<bool> JsonOption = new("--json") { Description = "Output in JSON format for machine consumption." };
+    private static readonly Argument<string> MessageArgument = new("message")
+    {
+        Description = "Description of the changes.",
+        Arity = ArgumentArity.ZeroOrOne
+    };
+    private static readonly Option<bool> AddedOption = new("--added") { Description = "Mark change as Added." };
+    private static readonly Option<bool> ChangedOption = new("--changed") { Description = "Mark change as Changed." };
+    private static readonly Option<bool> FixedOption = new("--fixed") { Description = "Mark change as Fixed." };
+    private static readonly Option<bool> RemovedOption = new("--removed") { Description = "Mark change as Removed." };
+    private static readonly Option<bool> DeprecatedOption = new("--deprecated") { Description = "Mark change as Deprecated." };
+    private static readonly Option<bool> SecurityOption = new("--security") { Description = "Mark change as Security." };
+    private static readonly Option<bool> BreakingOption = new("--breaking") { Description = "Mark change as Breaking Changes." };
+    private static readonly Option<string> FileOption = new("--file") { Description = "Read the change description from a file instead of the message argument, stdin, or a prompt." };
+    private static readonly Option<bool> AllowMajorOption = new("--allow-major") { Description = "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact." };
+    private static readonly Option<string> ApiMinLevelOption = new("--api-min-level") { Description = "Minimum API impact level (patch, minor, major). Fails if fragments are below this level." };
+    private static readonly Option<bool> ApiMinLevelWarnOption = new("--api-min-level-warn") { Description = "Only warn if --api-min-level is not met, do not fail." };
+    private static readonly Option<bool> DryRunOption = new("--dry-run") { Description = "Display what would happen without making any changes." };
+
     static async Task<int> Main(string[] args)
     {
         ParseResult parseResult = CreateRootCommand().Parse(args);
@@ -22,13 +41,24 @@ class Program
     static RootCommand CreateRootCommand()
     {
         var rootCommand = new RootCommand("ChangeSharp - Keep a Changelog. Derive the version.");
+        rootCommand.Add(BuildInitCommand());
+        rootCommand.Add(BuildNewCommand());
+        rootCommand.Add(BuildAddCommand());
+        rootCommand.Add(BuildStatusCommand());
+        rootCommand.Add(BuildValidateCommand());
+        rootCommand.Add(BuildReleaseCommand());
+        rootCommand.Add(BuildPublishCommand());
+        rootCommand.Add(BuildPrereleaseCommand());
+        rootCommand.Add(BuildRemoveCommand());
+        return rootCommand;
+    }
 
-        var jsonOption = new Option<bool>("--json") { Description = "Output in JSON format for machine consumption." };
-
-        var initCommand = new Command("init", "Initialize ChangeSharp configuration and directory structure.") { jsonOption };
+    private static Command BuildInitCommand()
+    {
+        var initCommand = new Command("init", "Initialize ChangeSharp configuration and directory structure.") { JsonOption };
         initCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
+            var o = Out(parseResult);
             try
             {
                 var manager = new WorkspaceManager();
@@ -73,38 +103,24 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(initCommand);
+        return initCommand;
+    }
 
-        var messageArgument = new Argument<string>("message")
-        {
-            Description = "Description of the changes.",
-            Arity = ArgumentArity.ZeroOrOne
-        };
-
-        var addedOption      = new Option<bool>("--added")      { Description = "Mark change as Added." };
-        var changedOption    = new Option<bool>("--changed")    { Description = "Mark change as Changed." };
-        var fixedOption      = new Option<bool>("--fixed")      { Description = "Mark change as Fixed." };
-        var removedOption    = new Option<bool>("--removed")    { Description = "Mark change as Removed." };
-        var deprecatedOption = new Option<bool>("--deprecated") { Description = "Mark change as Deprecated." };
-        var securityOption   = new Option<bool>("--security")   { Description = "Mark change as Security." };
-        var breakingOption   = new Option<bool>("--breaking")   { Description = "Mark change as Breaking Changes." };
-
-        var fileOption = new Option<string>("--file") { Description = "Read the change description from a file instead of the message argument, stdin, or a prompt." };
-        var allowMajorOption = new Option<bool>("--allow-major") { Description = "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact." };
-
+    private static Command BuildNewCommand()
+    {
         var newCommand = new Command("new", "Create a new unreleased changelog fragment.")
         {
-            messageArgument, addedOption, changedOption, fixedOption,
-            removedOption, deprecatedOption, securityOption, breakingOption,
-            fileOption, allowMajorOption, jsonOption,
+            MessageArgument, AddedOption, ChangedOption, FixedOption,
+            RemovedOption, DeprecatedOption, SecurityOption, BreakingOption,
+            FileOption, AllowMajorOption, JsonOption,
         };
 
         newCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
-            string? message = parseResult.GetValue(messageArgument);
+            var o = Out(parseResult);
+            string? message = parseResult.GetValue(MessageArgument);
 
-            string? messageFile = parseResult.GetValue(fileOption);
+            string? messageFile = parseResult.GetValue(FileOption);
             if (messageFile != null)
             {
                 if (!File.Exists(messageFile))
@@ -122,14 +138,14 @@ class Program
                 return o.Err("Description is required.", ExitCodeValidationError);
 
             string category;
-            bool added = parseResult.GetValue(addedOption);
-            bool changed = parseResult.GetValue(changedOption);
-            bool fixedOpt = parseResult.GetValue(fixedOption);
-            bool removed = parseResult.GetValue(removedOption);
-            bool deprecated = parseResult.GetValue(deprecatedOption);
-            bool security = parseResult.GetValue(securityOption);
-            bool breaking = parseResult.GetValue(breakingOption);
-            bool allowMajor = parseResult.GetValue(allowMajorOption);
+            bool added = parseResult.GetValue(AddedOption);
+            bool changed = parseResult.GetValue(ChangedOption);
+            bool fixedOpt = parseResult.GetValue(FixedOption);
+            bool removed = parseResult.GetValue(RemovedOption);
+            bool deprecated = parseResult.GetValue(DeprecatedOption);
+            bool security = parseResult.GetValue(SecurityOption);
+            bool breaking = parseResult.GetValue(BreakingOption);
+            bool allowMajor = parseResult.GetValue(AllowMajorOption);
 
             bool anyCategoryOptionProvided = added || changed || fixedOpt || removed || deprecated || security || breaking;
 
@@ -178,25 +194,28 @@ class Program
                 catch (Exception ex) { return o.Err(ex.Message); }
             }
         });
-        rootCommand.Add(newCommand);
+        return newCommand;
+    }
 
+    private static Command BuildAddCommand()
+    {
         var separateOption = new Option<bool>("--separate") { Description = "Create a new fragment file instead of appending to the open changelist." };
         var fragmentTargetOption = new Option<string>("--fragment") { Description = "Append to a specific fragment file in the unreleased directory." };
         var changelistNameOption = new Option<string>("--changelist") { Description = "Append to (or create) a deterministically named changelist file." };
 
         var addCommand = new Command("add", "Add a change to the open changelist, or create a new fragment file.")
         {
-            messageArgument, addedOption, changedOption, fixedOption,
-            removedOption, deprecatedOption, securityOption, breakingOption,
-            fileOption, allowMajorOption, separateOption, fragmentTargetOption, changelistNameOption, jsonOption,
+            MessageArgument, AddedOption, ChangedOption, FixedOption,
+            RemovedOption, DeprecatedOption, SecurityOption, BreakingOption,
+            FileOption, AllowMajorOption, separateOption, fragmentTargetOption, changelistNameOption, JsonOption,
         };
 
         addCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
-            string? message = parseResult.GetValue(messageArgument);
+            var o = Out(parseResult);
+            string? message = parseResult.GetValue(MessageArgument);
 
-            string? messageFile = parseResult.GetValue(fileOption);
+            string? messageFile = parseResult.GetValue(FileOption);
             if (messageFile != null)
             {
                 if (!File.Exists(messageFile))
@@ -214,14 +233,14 @@ class Program
                 return o.Err("Description is required.", ExitCodeValidationError);
 
             string category;
-            bool added = parseResult.GetValue(addedOption);
-            bool changed = parseResult.GetValue(changedOption);
-            bool fixedOpt = parseResult.GetValue(fixedOption);
-            bool removed = parseResult.GetValue(removedOption);
-            bool deprecated = parseResult.GetValue(deprecatedOption);
-            bool security = parseResult.GetValue(securityOption);
-            bool breaking = parseResult.GetValue(breakingOption);
-            bool allowMajor = parseResult.GetValue(allowMajorOption);
+            bool added = parseResult.GetValue(AddedOption);
+            bool changed = parseResult.GetValue(ChangedOption);
+            bool fixedOpt = parseResult.GetValue(FixedOption);
+            bool removed = parseResult.GetValue(RemovedOption);
+            bool deprecated = parseResult.GetValue(DeprecatedOption);
+            bool security = parseResult.GetValue(SecurityOption);
+            bool breaking = parseResult.GetValue(BreakingOption);
+            bool allowMajor = parseResult.GetValue(AllowMajorOption);
             bool separate = parseResult.GetValue(separateOption);
             string? fragmentTarget = parseResult.GetValue(fragmentTargetOption);
             string? changelistName = parseResult.GetValue(changelistNameOption);
@@ -277,16 +296,19 @@ class Program
                 catch (Exception ex) { return o.Err(ex.Message); }
             }
         });
-        rootCommand.Add(addCommand);
+        return addCommand;
+    }
 
+    private static Command BuildStatusCommand()
+    {
         var nextOnlyOption = new Option<bool>("--next-only") { Description = "Only output the next version number." };
         var statusCommand = new Command("status", "Show the status of unreleased fragments and computed version bump.")
         {
-            nextOnlyOption, jsonOption
+            nextOnlyOption, JsonOption
         };
         statusCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
+            var o = Out(parseResult);
             bool nextOnly = parseResult.GetValue(nextOnlyOption);
             try
             {
@@ -330,19 +352,20 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(statusCommand);
+        return statusCommand;
+    }
 
+    private static Command BuildValidateCommand()
+    {
         var requireFragmentsOption = new Option<bool>("--require-fragments") { Description = "Fail if no unreleased fragments are found." };
-        var apiMinLevelOption = new Option<string>("--api-min-level") { Description = "Minimum API impact level (patch, minor, major). Fails if fragments are below this level." };
-        var apiMinLevelWarnOption = new Option<bool>("--api-min-level-warn") { Description = "Only warn if --api-min-level is not met, do not fail." };
         var apiSurfaceOption = new Option<bool>("--api-surface") { Description = "Validate committed public-surface baselines and gate fragments against the derived impact." };
         var validateCommand = new Command("validate", "Validate unreleased fragments for correct format.")
         {
-            requireFragmentsOption, apiMinLevelOption, apiMinLevelWarnOption, apiSurfaceOption, jsonOption
+            requireFragmentsOption, ApiMinLevelOption, ApiMinLevelWarnOption, apiSurfaceOption, JsonOption
         };
         validateCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
+            var o = Out(parseResult);
             bool requireFragments = parseResult.GetValue(requireFragmentsOption);
             try
             {
@@ -367,10 +390,10 @@ class Program
                     }
                     else
                     {
-                        string? apiMinLevelValue = parseResult.GetValue(apiMinLevelOption);
+                        string? apiMinLevelValue = parseResult.GetValue(ApiMinLevelOption);
                         if (apiMinLevelValue != null)
                         {
-                            bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
+                            bool warnOnly = parseResult.GetValue(ApiMinLevelWarnOption);
                             var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(apiMinLevelValue);
                             if (!pass)
                             {
@@ -420,21 +443,23 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(validateCommand);
+        return validateCommand;
+    }
 
-        var dryRunOption = new Option<bool>("--dry-run") { Description = "Display what would happen without making any changes." };
+    private static Command BuildReleaseCommand()
+    {
         var allowEmptyOption = new Option<bool>("--allow-empty") { Description = "Exit with success even if no unreleased fragments are found." };
         var requireApprovalOption = new Option<bool>("--require-approval") { Description = "Require explicit approval (CHANGESHARP_ALLOW_UNSAFE_RELEASE) to proceed." };
         var allowMajorReleaseOption = new Option<bool>("--allow-major") { Description = "Allow a release whose impact exceeds SemverPolicy.MaxImpact." };
         var releaseCommand = new Command("release", "Aggregate fragments, bump version, update CHANGELOG.md, and clean up.")
         {
-            dryRunOption, allowEmptyOption, requireApprovalOption,
-            apiMinLevelOption, apiMinLevelWarnOption, allowMajorReleaseOption, jsonOption
+            DryRunOption, allowEmptyOption, requireApprovalOption,
+            ApiMinLevelOption, ApiMinLevelWarnOption, allowMajorReleaseOption, JsonOption
         };
         releaseCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
-            bool dryRun = parseResult.GetValue(dryRunOption);
+            var o = Out(parseResult);
+            bool dryRun = parseResult.GetValue(DryRunOption);
             bool allowEmpty = parseResult.GetValue(allowEmptyOption);
             bool requireApproval = parseResult.GetValue(requireApprovalOption);
 
@@ -511,8 +536,8 @@ class Program
                     });
                 }
 
-                string? apiMinLevelValue = parseResult.GetValue(apiMinLevelOption);
-                bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
+                string? apiMinLevelValue = parseResult.GetValue(ApiMinLevelOption);
+                bool warnOnly = parseResult.GetValue(ApiMinLevelWarnOption);
                 bool allowMajor = parseResult.GetValue(allowMajorReleaseOption);
 
                 var gate = manager.GetReleaseGateResult(apiMinLevelValue, allowMajor);
@@ -539,16 +564,19 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(releaseCommand);
+        return releaseCommand;
+    }
 
+    private static Command BuildPublishCommand()
+    {
         var versionOption = new Option<string>("--version") { Description = "Specific released version to output (default: latest)." };
         var publishCommand = new Command("publish", "Output a released version and its changelog segment (for creating a forge release).")
         {
-            versionOption, jsonOption
+            versionOption, JsonOption
         };
         publishCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
+            var o = Out(parseResult);
             try
             {
                 var manager = new WorkspaceManager();
@@ -567,26 +595,29 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(publishCommand);
+        return publishCommand;
+    }
 
-        var branchOption  = new Option<string>("--branch") { Description = "Specific branch name to use for pre-release." };
-        var listOption    = new Option<bool>("--list") { Description = "List all active pre-releases." };
+    private static Command BuildPrereleaseCommand()
+    {
+        var branchOption = new Option<string>("--branch") { Description = "Specific branch name to use for pre-release." };
+        var listOption = new Option<bool>("--list") { Description = "List all active pre-releases." };
         var promoteOption = new Option<bool>("--promote") { Description = "Promote the latest pre-release to a final release." };
         var channelOption = new Option<string>("--channel") { Description = "Optional release channel (e.g. alpha, beta, rc)." };
 
         var prereleaseCommand = new Command("prerelease", "Handle pre-release versions based on branches.")
         {
-            branchOption, listOption, promoteOption, channelOption, dryRunOption, jsonOption
+            branchOption, listOption, promoteOption, channelOption, DryRunOption, JsonOption
         };
 
         prereleaseCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
+            var o = Out(parseResult);
             string? branch = parseResult.GetValue(branchOption);
-            bool list      = parseResult.GetValue(listOption);
-            bool promote   = parseResult.GetValue(promoteOption);
+            bool list = parseResult.GetValue(listOption);
+            bool promote = parseResult.GetValue(promoteOption);
             string? channel = parseResult.GetValue(channelOption);
-            bool dryRun    = parseResult.GetValue(dryRunOption);
+            bool dryRun = parseResult.GetValue(DryRunOption);
 
             try
             {
@@ -634,9 +665,12 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(prereleaseCommand);
+        return prereleaseCommand;
+    }
 
-        var listOption2 = new Option<bool>("--list") { Description = "List all unreleased fragments." };
+    private static Command BuildRemoveCommand()
+    {
+        var listOption = new Option<bool>("--list") { Description = "List all unreleased fragments." };
         var allOption = new Option<bool>("--all") { Description = "Remove all unreleased fragments." };
         var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation for --all." };
         var fragmentArgument = new Argument<string>("fragment")
@@ -646,12 +680,12 @@ class Program
         };
         var removeCommand = new Command("remove", "Remove an unreleased changelog fragment.")
         {
-            fragmentArgument, listOption2, allOption, yesOption, jsonOption
+            fragmentArgument, listOption, allOption, yesOption, JsonOption
         };
         removeCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
-            bool list = parseResult.GetValue(listOption2);
+            var o = Out(parseResult);
+            bool list = parseResult.GetValue(listOption);
             bool all = parseResult.GetValue(allOption);
             bool yes = parseResult.GetValue(yesOption);
             string? fragment = parseResult.GetValue(fragmentArgument);
@@ -728,13 +762,11 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(removeCommand);
-
-        return rootCommand;
+        return removeCommand;
     }
 
-    private static Output Out(ParseResult pr, Option<bool> jsonOption) =>
-        new(pr.GetValue(jsonOption));
+    private static Output Out(ParseResult pr) =>
+        new(pr.GetValue(JsonOption));
 
     private static int CheckApiSurface(ParseResult parseResult, WorkspaceManager manager, Output o)
     {
