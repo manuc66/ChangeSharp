@@ -80,6 +80,24 @@ jobs:
       - name: Validate the public API surface
         run: changesharp validate --api-surface
 
+  demo:
+    # Dogfoods the MaxImpact gate end-to-end through the CLI and MCP server:
+    # add/new at creation, release gate, --allow-major, branch caps, MCP
+    # create_fragment/perform_release. See samples/maximpact-gate/README.md.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run the max-impact-gate demo (CLI + MCP)
+        run: samples/maximpact-gate/run-demo.sh
+
   analysis:
     # SonarCloud analyzes both main pushes and pull requests. For PRs the scanner
     # needs the pull-request parameters plus GITHUB_TOKEN (used to decorate the PR
