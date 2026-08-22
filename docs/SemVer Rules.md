@@ -71,20 +71,60 @@ ChangeSharp does **not** perform the API diff itself — it only enforces the po
 
 `MaxImpact` accepts `patch`, `minor`, or `major`. The default is `major`, which disables the cap entirely — existing projects are unaffected until they opt in.
 
-> **Note on custom mappings**: the cap applies to the *impact level* your `Mappings` declare, not to whether a change is actually breaking. If you map `Changed → Major` (like this repository does) and set `MaxImpact: minor`, then `changesharp new --changed` is blocked too — even for harmless changes. With such a mapping, choose `MaxImpact: major` (or accept that every `Changed` needs `--allow-major`).
+### Per-branch caps (`SemverPolicy.BranchMaxImpact`)
+
+Restrict the allowed impact on specific branches (e.g. hotfix or release branches
+that should only accept fixes). The effective cap is the most restrictive of the
+global `MaxImpact` and the matching branch entry:
+
+```json
+{
+  "SemverPolicy": {
+    "MaxImpact": "minor",
+    "BranchMaxImpact": {
+      "release/*": "patch",
+      "hotfix/*": "patch"
+    }
+  }
+}
+```
+
+On a `release/1.2` branch, an `Added` fragment (Minor) is refused at creation
+and at release (exit 3) unless `--allow-major` is passed; a `Fixed` fragment
+(Patch) is fine. Branch patterns support `*` as a suffix wildcard.
+
+### The `add` command
+
+`changesharp add` is the everyday way to record a change:
+
+```bash
+changesharp add "Add search"             # append to the open changelist (category prompted)
+changesharp add --added "Add search"     # category via flag
+changesharp add --separate "doc only"    # force a new fragment file
+changesharp add --fragment <file> "x"    # append to a specific fragment
+changesharp add --changelist <name> "x"  # append to (or create) a named changelist
+```
+
+`add` appends to the most recent fragment (the open changelist). On the default
+branch (`main`/`master`) it always creates a separate file so concurrent pushes
+stay conflict-free; `--separate`, `--fragment`, and `--changelist` override the
+target. `changesharp new` is equivalent to `add --separate`. The `MaxImpact`
+cap applies to `add` exactly as it does to `new`.
+
+> **Note on custom mappings**: the cap applies to the *impact level* your `Mappings` declare, not to whether a change is actually breaking. If you map `Changed → Major` (like this repository does) and set `MaxImpact: minor`, then `changesharp add --changed` is blocked too — even for harmless changes. With such a mapping, choose `MaxImpact: major` (or accept that every `Changed` needs `--allow-major`).
 
 ### Where it is enforced
 
 | Step | Behavior |
 | --- | --- |
-| `changesharp new` (flags) | Category above the cap → refused (exit 3) unless `--allow-major` |
-| `changesharp new` (interactive) | Blocked categories are marked `⚠ blocked (MaxImpact)` in the menu and re-prompted |
+| `changesharp add` / `new` (flags) | Category above the cap → refused (exit 3) unless `--allow-major` |
+| `changesharp add` / `new` (interactive) | Blocked categories are marked `⚠ blocked (MaxImpact)` in the menu and re-prompted |
 | `changesharp validate` | Does **not** enforce the cap (format check only) |
 | `changesharp release` | Refused (exit 3) unless `--allow-major` — the production gate (human-in-the-loop) |
 
 ```bash
-changesharp new --breaking              # ❌ refused above the cap
-changesharp new --breaking --allow-major # ✅ deliberate
+changesharp add --breaking              # ❌ refused above the cap
+changesharp add --breaking --allow-major # ✅ deliberate
 changesharp release                      # ❌ refused above the cap
 changesharp release --allow-major        # ✅ deliberate
 ```

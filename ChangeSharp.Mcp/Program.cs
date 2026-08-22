@@ -65,7 +65,7 @@ class Program
                             new
                             {
                                 name = "create_fragment",
-                                description = "Create a new unreleased change fragment.",
+                                description = "Create a new change fragment or add to the open changelist.",
                                 inputSchema = new
                                 {
                                     type = "object",
@@ -73,7 +73,10 @@ class Program
                                     {
                                         message = new { type = "string", description = "The description of the change." },
                                         category = new { type = "string", description = "The category of the change (e.g., Added, Fixed, Changed, Removed)." },
-                                        allowMajor = new { type = "boolean", description = "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact." }
+                                        allowMajor = new { type = "boolean", description = "Allow a fragment whose impact exceeds the allowed impact cap." },
+                                        separate = new { type = "boolean", description = "Create a new fragment file instead of appending to the open changelist." },
+                                        fragment = new { type = "string", description = "Append to a specific fragment file in the unreleased directory." },
+                                        changelist = new { type = "string", description = "Append to (or create) a deterministically named changelist file." }
                                     },
                                     required = new[] { "message", "category" }
                                 }
@@ -154,6 +157,9 @@ class Program
                     var message = args?["message"]?.ToString() ?? "";
                     var category = args?["category"]?.ToString() ?? "Added";
                     bool allowFragmentMajor = args?["allowMajor"]?.GetValue<bool>() ?? false;
+                    bool separateFragment = args?["separate"]?.GetValue<bool>() ?? false;
+                    string? fragmentTarget = args?["fragment"]?.ToString();
+                    string? changelistName = args?["changelist"]?.ToString();
                     string? fragmentError = Manager.GetCreateFragmentError(category, allowFragmentMajor);
                     if (fragmentError != null)
                     {
@@ -163,7 +169,7 @@ class Program
                             isError = true
                         };
                     }
-                    string path = Manager.CreateFragment(message, category);
+                    var (fragmentPath, appended, formattedCategory) = Manager.AppendFragment(message, category, separateFragment, fragmentTarget, changelistName);
                     return new
                     {
                         content = new[]
@@ -171,7 +177,9 @@ class Program
                             new
                             {
                                 type = "text",
-                                text = $"Fragment created: {Path.GetFileName(path)}"
+                                text = appended
+                                    ? $"Added to {Path.GetFileName(fragmentPath)} under '{formattedCategory}'"
+                                    : $"Fragment created: {Path.GetFileName(fragmentPath)}"
                             }
                         }
                     };

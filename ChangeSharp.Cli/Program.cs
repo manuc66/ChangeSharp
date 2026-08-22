@@ -173,6 +173,105 @@ class Program
         });
         rootCommand.Add(newCommand);
 
+        var separateOption = new Option<bool>("--separate") { Description = "Create a new fragment file instead of appending to the open changelist." };
+        var fragmentTargetOption = new Option<string>("--fragment") { Description = "Append to a specific fragment file in the unreleased directory." };
+        var changelistNameOption = new Option<string>("--changelist") { Description = "Append to (or create) a deterministically named changelist file." };
+
+        var addCommand = new Command("add", "Add a change to the open changelist, or create a new fragment file.")
+        {
+            messageArgument, addedOption, changedOption, fixedOption,
+            removedOption, deprecatedOption, securityOption, breakingOption,
+            fileOption, allowMajorOption, separateOption, fragmentTargetOption, changelistNameOption, jsonOption,
+        };
+
+        addCommand.SetAction(parseResult =>
+        {
+            var o = Out(parseResult, jsonOption);
+            string? message = parseResult.GetValue(messageArgument);
+
+            string? messageFile = parseResult.GetValue(fileOption);
+            if (messageFile != null)
+            {
+                if (!File.Exists(messageFile))
+                    return o.Err($"File not found: {messageFile}", ExitCodeGenericError);
+                message = File.ReadAllText(messageFile).Trim();
+            }
+            else if (string.IsNullOrWhiteSpace(message))
+            {
+                message = Console.IsInputRedirected
+                    ? Console.In.ReadToEnd().Trim()
+                    : PromptForMessage();
+            }
+
+            if (string.IsNullOrWhiteSpace(message))
+                return o.Err("Description is required.", ExitCodeValidationError);
+
+            string category;
+            bool added = parseResult.GetValue(addedOption);
+            bool changed = parseResult.GetValue(changedOption);
+            bool fixedOpt = parseResult.GetValue(fixedOption);
+            bool removed = parseResult.GetValue(removedOption);
+            bool deprecated = parseResult.GetValue(deprecatedOption);
+            bool security = parseResult.GetValue(securityOption);
+            bool breaking = parseResult.GetValue(breakingOption);
+            bool allowMajor = parseResult.GetValue(allowMajorOption);
+            bool separate = parseResult.GetValue(separateOption);
+            string? fragmentTarget = parseResult.GetValue(fragmentTargetOption);
+            string? changelistName = parseResult.GetValue(changelistNameOption);
+
+            bool anyCategoryOptionProvided = added || changed || fixedOpt || removed || deprecated || security || breaking;
+
+            while (true)
+            {
+                if (anyCategoryOptionProvided)
+                {
+                    category = breaking ? "Breaking Changes"
+                             : removed ? "Removed"
+                             : changed ? "Changed"
+                             : deprecated ? "Deprecated"
+                             : fixedOpt ? "Fixed"
+                             : security ? "Security"
+                             : "Added";
+                }
+                else if (Console.IsInputRedirected)
+                {
+                    return o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
+                }
+                else
+                {
+                    category = PromptForCategory(allowMajor);
+                }
+
+                try
+                {
+                    var manager = new WorkspaceManager();
+                    string? blockReason = manager.GetCreateFragmentError(category, allowMajor);
+                    if (blockReason != null)
+                    {
+                        if (anyCategoryOptionProvided || Console.IsInputRedirected)
+                            return o.Err(blockReason, ExitCodeValidationError);
+                        Console.WriteLine();
+                        Console.WriteLine($"  {blockReason}");
+                        Console.WriteLine("  Choose another category, or rerun with --allow-major.");
+                        continue;
+                    }
+
+                    var (fragmentPath, appended, formattedCategory) = manager.AppendFragment(message, category, separate, fragmentTarget, changelistName);
+                    return o.Ok(new
+                    {
+                        filename = Path.GetFileName(fragmentPath),
+                        category = formattedCategory,
+                        appended,
+                        path = fragmentPath
+                    }, () => Console.WriteLine(appended
+                        ? $"Added to {Path.GetFileName(fragmentPath)} under '{formattedCategory}'"
+                        : $"Created fragment: {Path.GetFileName(fragmentPath)} under category '{formattedCategory}'"));
+                }
+                catch (Exception ex) { return o.Err(ex.Message); }
+            }
+        });
+        rootCommand.Add(addCommand);
+
         var nextOnlyOption = new Option<bool>("--next-only") { Description = "Only output the next version number." };
         var statusCommand = new Command("status", "Show the status of unreleased fragments and computed version bump.")
         {

@@ -11,6 +11,7 @@ Options:
 Commands:
   init               Initialize ChangeSharp configuration and directory structure.
   new <message>      Create a new unreleased changelog fragment.
+  add <message>      Add a change to the open changelist, or create a new fragment file.
   status             Show the status of unreleased fragments and computed version bump.
   validate           Validate unreleased fragments for correct format.
   release            Aggregate fragments, bump version, update CHANGELOG.md, and clean up.

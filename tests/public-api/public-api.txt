@@ -94,6 +94,7 @@ namespace ChangeSharp
     public class SemverPolicyConfig
     {
         public SemverPolicyConfig() { }
+        public System.Collections.Generic.Dictionary<string, string> BranchMaxImpact { get; set; }
         public System.Collections.Generic.Dictionary<string, string> Mappings { get; set; }
         public string MaxImpact { get; set; }
     }
@@ -119,6 +120,11 @@ namespace ChangeSharp
     public class WorkspaceManager
     {
         public WorkspaceManager(string? basePath = null) { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "FragmentPath",
+                "Appended",
+                "Category"})]
+        public System.ValueTuple<string, bool, string> AppendFragment(string message, string category, bool separate = false, string? targetFile = null, string? changelistName = null) { }
         [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
                 "Pass",
                 "MaxImpact",
@@ -161,6 +167,7 @@ namespace ChangeSharp
                 "CategoryImpact",
                 "MaxAllowed"})]
         public System.ValueTuple<bool, int, int> IsCategoryWithinMaxImpact(string category) { }
+        public bool IsDefaultBranch() { }
         public string[] ListFragmentFiles() { }
         [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
                 "Prereleases",

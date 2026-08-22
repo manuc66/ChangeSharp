@@ -9,7 +9,7 @@
   },
   {
     "name": "create_fragment",
-    "description": "Create a new unreleased change fragment.",
+    "description": "Create a new change fragment or add to the open changelist.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -23,7 +23,19 @@
         },
         "allowMajor": {
           "type": "boolean",
-          "description": "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact."
+          "description": "Allow a fragment whose impact exceeds the allowed impact cap."
+        },
+        "separate": {
+          "type": "boolean",
+          "description": "Create a new fragment file instead of appending to the open changelist."
+        },
+        "fragment": {
+          "type": "string",
+          "description": "Append to a specific fragment file in the unreleased directory."
+        },
+        "changelist": {
+          "type": "string",
+          "description": "Append to (or create) a deterministically named changelist file."
         }
       },
       "required": [
