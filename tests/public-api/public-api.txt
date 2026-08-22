@@ -63,6 +63,10 @@ namespace ChangeSharp
         public FragmentNamingConfig() { }
         public bool IncludeBranchName { get; set; }
     }
+    public static class McpToolCatalog
+    {
+        public static System.Text.Json.Nodes.JsonArray Tools { get; }
+    }
     public class NextVersionComputer
     {
         public NextVersionComputer() { }
@@ -83,6 +87,15 @@ namespace ChangeSharp
         public bool Enabled { get; set; }
         public int MaxIdentifierLength { get; set; }
         public bool SanitizeBranchName { get; set; }
+    }
+    public static class PublicSurfaceValidator
+    {
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "Match",
+                "Message"})]
+        public static System.ValueTuple<bool, string?> BaselinesMatch(System.Collections.Generic.IReadOnlyDictionary<string, string> generated, System.Collections.Generic.IReadOnlyDictionary<string, string> committed) { }
+        public static string DeriveImpact(System.Collections.Generic.IReadOnlyDictionary<string, string>? baseSurface, System.Collections.Generic.IReadOnlyDictionary<string, string> currentSurface) { }
+        public static string Normalize(string content) { }
     }
     public class SecurityConfig
     {

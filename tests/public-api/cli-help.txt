@@ -58,6 +58,34 @@ Options:
   -?, -h, --help  Show help and usage information
 
 
+##### add #####
+
+Description:
+  Add a change to the open changelist, or create a new fragment file.
+
+Usage:
+  ChangeSharp.Cli add [<message>] [options]
+
+Arguments:
+  <message>  Description of the changes.
+
+Options:
+  --added                    Mark change as Added.
+  --changed                  Mark change as Changed.
+  --fixed                    Mark change as Fixed.
+  --removed                  Mark change as Removed.
+  --deprecated               Mark change as Deprecated.
+  --security                 Mark change as Security.
+  --breaking                 Mark change as Breaking Changes.
+  --file <file>              Read the change description from a file instead of the message argument, stdin, or a prompt.
+  --allow-major              Allow a fragment whose impact exceeds SemverPolicy.MaxImpact.
+  --separate                 Create a new fragment file instead of appending to the open changelist.
+  --fragment <fragment>      Append to a specific fragment file in the unreleased directory.
+  --changelist <changelist>  Append to (or create) a deterministically named changelist file.
+  --json                     Output in JSON format for machine consumption.
+  -?, -h, --help             Show help and usage information
+
+
 ##### status #####
 
 Description:
@@ -84,6 +112,7 @@ Options:
   --require-fragments              Fail if no unreleased fragments are found.
   --api-min-level <api-min-level>  Minimum API impact level (patch, minor, major). Fails if fragments are below this level.
   --api-min-level-warn             Only warn if --api-min-level is not met, do not fail.
+  --api-surface                    Validate committed public-surface baselines and gate fragments against the derived impact.
   --json                           Output in JSON format for machine consumption.
   -?, -h, --help                   Show help and usage information
 

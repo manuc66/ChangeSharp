@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.CommandLine.Parsing;
+using System.Globalization;
 using System.Text.Json;
 
 namespace ChangeSharp.Cli;
@@ -13,6 +14,12 @@ class Program
     internal const int ExitCodeConflict = 4;
 
     static async Task<int> Main(string[] args)
+    {
+        ParseResult parseResult = CreateRootCommand().Parse(args);
+        return await parseResult.InvokeAsync();
+    }
+
+    static RootCommand CreateRootCommand()
     {
         var rootCommand = new RootCommand("ChangeSharp - Keep a Changelog. Derive the version.");
 
@@ -328,9 +335,10 @@ class Program
         var requireFragmentsOption = new Option<bool>("--require-fragments") { Description = "Fail if no unreleased fragments are found." };
         var apiMinLevelOption = new Option<string>("--api-min-level") { Description = "Minimum API impact level (patch, minor, major). Fails if fragments are below this level." };
         var apiMinLevelWarnOption = new Option<bool>("--api-min-level-warn") { Description = "Only warn if --api-min-level is not met, do not fail." };
+        var apiSurfaceOption = new Option<bool>("--api-surface") { Description = "Validate committed public-surface baselines and gate fragments against the derived impact." };
         var validateCommand = new Command("validate", "Validate unreleased fragments for correct format.")
         {
-            requireFragmentsOption, apiMinLevelOption, apiMinLevelWarnOption, jsonOption
+            requireFragmentsOption, apiMinLevelOption, apiMinLevelWarnOption, apiSurfaceOption, jsonOption
         };
         validateCommand.SetAction(parseResult =>
         {
@@ -352,18 +360,26 @@ class Program
 
                 if (!hasErrors)
                 {
-                    string? apiMinLevelValue = parseResult.GetValue(apiMinLevelOption);
-                    if (apiMinLevelValue != null)
+                    if (parseResult.GetValue(apiSurfaceOption))
                     {
-                        bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
-                        var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(apiMinLevelValue);
-                        if (!pass)
+                        int surfaceResult = CheckApiSurface(parseResult, manager, o);
+                        if (surfaceResult != 0) return surfaceResult;
+                    }
+                    else
+                    {
+                        string? apiMinLevelValue = parseResult.GetValue(apiMinLevelOption);
+                        if (apiMinLevelValue != null)
                         {
-                            string message = $"API surface requires at least a '{apiMinLevelValue}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).";
-                            if (warnOnly)
-                                o.Warn(message);
-                            else
-                                return o.Err(message, ExitCodeValidationError);
+                            bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
+                            var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(apiMinLevelValue);
+                            if (!pass)
+                            {
+                                string message = $"API surface requires at least a '{apiMinLevelValue}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).";
+                                if (warnOnly)
+                                    o.Warn(message);
+                                else
+                                    return o.Err(message, ExitCodeValidationError);
+                            }
                         }
                     }
                 }
@@ -714,12 +730,156 @@ class Program
         });
         rootCommand.Add(removeCommand);
 
-        ParseResult parseResult = rootCommand.Parse(args);
-        return await parseResult.InvokeAsync();
+        return rootCommand;
     }
 
     private static Output Out(ParseResult pr, Option<bool> jsonOption) =>
         new(pr.GetValue(jsonOption));
+
+    private static int CheckApiSurface(ParseResult parseResult, WorkspaceManager manager, Output o)
+    {
+        string baselineDir = Path.Combine(Directory.GetCurrentDirectory(), "tests", "public-api");
+        if (!Directory.Exists(baselineDir))
+            return o.Err($"No public-surface baselines found in '{baselineDir}'. Run scripts/update-public-api.sh first.", ExitCodeGenericError);
+
+        var generated = GenerateSurfaces();
+        var committed = ReadBaselines(baselineDir);
+
+        var (match, message) = PublicSurfaceValidator.BaselinesMatch(generated, committed);
+        if (!match)
+            return o.Err(message ?? "Public-surface baselines are out of date.", ExitCodeValidationError);
+
+        var baseSurface = ReadBaselinesFromGit("origin/main");
+        string level = PublicSurfaceValidator.DeriveImpact(baseSurface, committed);
+
+        if (level != "patch")
+        {
+            manager.GetStatus(out int count, out _, out _, out _);
+            if (count == 0)
+                return o.Err($"API surface changed (impact '{level}'), but no fragments are recorded. Add a fragment at or above this level.", ExitCodeValidationError);
+
+            var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(level);
+            if (!pass)
+                return o.Err($"API surface changed (impact '{level}'), but fragments only reach '{maxLevelName}' (level {maxImpact}).", ExitCodeValidationError);
+        }
+
+        return o.Ok(new { impact = level, baselines = generated.Keys.OrderBy(k => k).ToList() },
+            () => Console.WriteLine($"Public-surface baselines up to date (impact '{level}')."));
+    }
+
+    private static Dictionary<string, string> GenerateSurfaces()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+
+            var surfaces = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["cli-help.txt"] = GenerateCliHelp(CreateRootCommand()),
+                ["mcp-tools.json"] = JsonSerializer.Serialize(McpToolCatalog.Tools, new JsonSerializerOptions { WriteIndented = true }),
+                ["public-api.txt"] = GeneratePublicApi()
+            };
+
+            return surfaces;
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+    }
+
+    private static string GenerateCliHelp(RootCommand root)
+    {
+        var originalOut = Console.Out;
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+
+            using var sw = new StringWriter();
+            Console.SetOut(sw);
+
+            foreach (var cmd in new[] { root }.Concat(root.Subcommands))
+            {
+                if (cmd != root)
+                {
+                    sw.WriteLine();
+                    sw.WriteLine($"##### {cmd.Name} #####");
+                    sw.WriteLine();
+                }
+
+                string[] args = cmd == root ? new[] { "--help" } : new[] { cmd.Name, "--help" };
+                root.Parse(args).InvokeAsync().GetAwaiter().GetResult();
+            }
+
+            return sw.ToString();
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+    }
+
+    private static string GeneratePublicApi()
+    {
+        string api = PublicApiGenerator.ApiGenerator.GeneratePublicApi(typeof(WorkspaceManager).Assembly);
+        return api.Replace("\r\n", "\n").TrimEnd() + "\n";
+    }
+
+    private static Dictionary<string, string> ReadBaselines(string dir)
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var file in Directory.GetFiles(dir))
+            files[Path.GetFileName(file)] = File.ReadAllText(file);
+        return files;
+    }
+
+    private static Dictionary<string, string>? ReadBaselinesFromGit(string rev)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in new[] { "cli-help.txt", "mcp-tools.json", "public-api.txt" })
+        {
+            string? content = TryGitShow($"{rev}:tests/public-api/{name}");
+            if (content != null)
+                result[name] = content;
+        }
+        return result.Count > 0 ? result : null;
+    }
+
+    private static string? TryGitShow(string spec)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("git")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            psi.ArgumentList.Add("show");
+            psi.ArgumentList.Add(spec);
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process == null) return null;
+            string output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            return process.ExitCode == 0 ? output : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private static string? PromptForMessage()
     {

@@ -27,7 +27,7 @@ MCP="$ROOT/ChangeSharp.Mcp/bin/Release/net10.0/ChangeSharp.Mcp.dll"
 echo ">>> Generating cli-help.txt ..."
 {
   LC_ALL=C dotnet "$CLI" --help
-  for cmd in init new status validate release publish prerelease remove; do
+  for cmd in init new add status validate release publish prerelease remove; do
     echo
     echo "##### $cmd #####"
     echo
