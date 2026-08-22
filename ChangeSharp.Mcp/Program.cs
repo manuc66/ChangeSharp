@@ -72,7 +72,8 @@ class Program
                                     properties = new
                                     {
                                         message = new { type = "string", description = "The description of the change." },
-                                        category = new { type = "string", description = "The category of the change (e.g., Added, Fixed, Changed, Removed)." }
+                                        category = new { type = "string", description = "The category of the change (e.g., Added, Fixed, Changed, Removed)." },
+                                        allowMajor = new { type = "boolean", description = "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact." }
                                     },
                                     required = new[] { "message", "category" }
                                 }
@@ -152,6 +153,26 @@ class Program
                 case "create_fragment":
                     var message = args?["message"]?.ToString() ?? "";
                     var category = args?["category"]?.ToString() ?? "Added";
+                    bool allowFragmentMajor = args?["allowMajor"]?.GetValue<bool>() ?? false;
+                    if (!allowFragmentMajor)
+                    {
+                        var (allowed, categoryImpact, maxAllowed) = Manager.IsCategoryWithinMaxImpact(category);
+                        if (!allowed)
+                        {
+                            return new
+                            {
+                                content = new[]
+                                {
+                                    new
+                                    {
+                                        type = "text",
+                                        text = $"Category '{category}' requires a {ImpactLevel(categoryImpact)} bump, above the configured SemverPolicy.MaxImpact ({ImpactLevel(maxAllowed)}). Set allowMajor: true to override."
+                                    }
+                                },
+                                isError = true
+                            };
+                        }
+                    }
                     string path = Manager.CreateFragment(message, category);
                     return new
                     {
@@ -320,6 +341,14 @@ class Program
             };
         }
     }
+
+    private static string ImpactLevel(int impact) => impact switch
+    {
+        3 => "major",
+        2 => "minor",
+        1 => "patch",
+        _ => "none"
+    };
 
     private static void SendResponse(JsonNode? id, object result)
     {

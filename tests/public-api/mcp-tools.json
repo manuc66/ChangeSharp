@@ -20,6 +20,10 @@
         "category": {
           "type": "string",
           "description": "The category of the change (e.g., Added, Fixed, Changed, Removed)."
+        },
+        "allowMajor": {
+          "type": "boolean",
+          "description": "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact."
         }
       },
       "required": [

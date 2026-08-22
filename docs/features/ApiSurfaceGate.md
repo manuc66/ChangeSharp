@@ -111,10 +111,12 @@ ChangeSharp applies the API Surface Gate to **its own** public surfaces. Committ
 CI job `api-surface` (`.github/workflows/dotnet.yml`):
 
 1. Regenerates the baselines and **fails** if the committed ones are out of date (`run scripts/update-public-api.sh`).
-2. Diffs them against `origin/main` and derives the minimum impact: additions → `minor`, removals/renames → `major`, none → `patch`.
+2. Diffs them against `origin/main` and derives the minimum impact: additions → `minor`, removals/renames → `major`, none → `patch`. Because `cli-help.txt` stores raw help text, a help-*reword* shows up as one removed + one added line and is conservatively treated as `major`.
 3. Runs `changesharp validate --api-min-level <impact>` so the PR's fragments cannot be lower than the real surface change.
 
 The library baseline is also enforced at build time by `PublicApiBaselineTests` (part of `dotnet test`).
+
+`scripts/update-public-api.sh` requires `dotnet` and `jq` (the MCP snapshot is pretty-printed with `jq`; `jq` is pre-installed on the CI `ubuntu-latest` runner).
 
 When you change a public surface, update the baselines and add a fragment that matches the impact:
 

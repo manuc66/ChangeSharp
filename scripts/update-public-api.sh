@@ -12,6 +12,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$ROOT/tests/public-api"
 mkdir -p "$OUT"
 
+if ! command -v jq >/dev/null 2>&1; then
+  echo "Error: 'jq' is required to regenerate the MCP tools baseline. Install it (e.g. apt install jq)." >&2
+  exit 1
+fi
+
 echo ">>> Building CLI + MCP (Release) ..."
 dotnet build "$ROOT/ChangeSharp.Cli/ChangeSharp.Cli.csproj" -c Release --nologo >/dev/null
 dotnet build "$ROOT/ChangeSharp.Mcp/ChangeSharp.Mcp.csproj" -c Release --nologo >/dev/null

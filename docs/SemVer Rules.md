@@ -88,3 +88,7 @@ changesharp release --allow-major        # ✅ deliberate
 ```
 
 The `--allow-major` flag is the explicit opt-in at both creation and release, so a Major requires two deliberate decisions. A runnable demo lives in `samples/maximpact-gate/`.
+
+### Known limits
+
+The gates (`--api-min-level`, `--allow-major`) are enforced on the `new`, `validate`, and `release` commands (and the MCP tools). The `prerelease` create/promote path bypasses them: `changesharp prerelease --promote` promotes a pre-release to a final release without a cap check. This matches the pre-existing behavior of `--api-min-level` on that path; if you rely on the cap, run `changesharp release --allow-major` (or a dry-run `validate --api-min-level`) as an explicit gate before promoting.
