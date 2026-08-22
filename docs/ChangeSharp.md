@@ -32,7 +32,7 @@ In the .NET ecosystem, release versioning is heavily dominated by tools like **G
 ChangeSharp distinguishes itself as the **changelog-driven versioning for .NET with CI-ready gates and AI-native integration**:
 
 *   **Natively Integrated in .NET**: First-class support for MSBuild, .NET Global Tools, and C# library usage.
-*   **Safety Gates (The Differentiator)**: Unlike simple fragment managers, ChangeSharp enforces a **minimum API impact level** (`--api-min-level`): the CI computes the actual API surface impact with its own diff tool, and ChangeSharp fails the build if the declared fragments are below that level.
+*   **Safety Gates (The Differentiator)**: Unlike simple fragment managers, ChangeSharp enforces a **minimum API impact level** (`--api-min-level`): the CI computes the actual API surface impact with its own diff tool, and ChangeSharp fails the build if the declared fragments are below that level. The symmetric **max-impact cap** (`SemverPolicy.MaxImpact` + `--allow-major`) blocks fragments/releases that would force a Major bump the team does not want. ChangeSharp dogfoods the API surface gate on its own CLI, MCP, and library surfaces — see [API Surface Gate](features/ApiSurfaceGate.md).
 *   **Separation of Concerns**: Git history is for developers; changelogs are for users.
 *   **Conflict-Free Workflows**: Independent Markdown fragments eliminate merge conflicts on `CHANGELOG.md`.
 *   **AI-Native (MCP Layer)**: First tool to expose changelog management to AI agents via the **Model Context Protocol (MCP)**, with built-in security approval gates.

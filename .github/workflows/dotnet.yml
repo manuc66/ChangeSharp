@@ -53,6 +53,58 @@ jobs:
       if: github.event_name == 'push'
       run: changesharp validate
 
+  api-surface:
+    # Dogfoods the API Surface Gate on ChangeSharp's own public surfaces
+    # (CLI help, MCP tools, library public API). See docs/features/ApiSurfaceGate.md.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Regenerate public-surface baselines
+        run: scripts/update-public-api.sh
+
+      - name: Committed baselines must match the regenerated surface
+        run: |
+          if ! git diff --exit-code -- tests/public-api/; then
+            echo "::error::Public-surface baselines are out of date. Run scripts/update-public-api.sh and commit the result."
+            exit 1
+          fi
+
+      - name: Derive API impact from the baseline diff vs main
+        id: surface
+        run: |
+          git fetch origin main --depth=1
+          DIFF=$(git diff --unified=0 origin/main -- tests/public-api/ || true)
+          if [ -z "$DIFF" ]; then
+            LEVEL=patch
+          else
+            ADDED=$(echo "$DIFF" | grep -c '^+[^+]' || true)
+            REMOVED=$(echo "$DIFF" | grep -c '^-[^-]' || true)
+            if [ "$REMOVED" -gt 0 ]; then LEVEL=major; else LEVEL=minor; fi
+          fi
+          echo "Detected API impact level: $LEVEL"
+          echo "level=$LEVEL" >> "$GITHUB_OUTPUT"
+
+      - name: Pack ChangeSharp CLI
+        run: dotnet pack ChangeSharp.Cli/ChangeSharp.Cli.csproj -o nupkg --nologo
+
+      - name: Install ChangeSharp CLI
+        run: dotnet tool install --global --add-source ./nupkg ChangeSharp.Cli
+
+      - name: Enforce fragments against the API surface impact
+        run: |
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          changesharp validate --api-min-level ${{ steps.surface.outputs.level }}
+
   analysis:
     # SonarCloud analyzes both main pushes and pull requests. For PRs the scanner
     # needs the pull-request parameters plus GITHUB_TOKEN (used to decorate the PR
