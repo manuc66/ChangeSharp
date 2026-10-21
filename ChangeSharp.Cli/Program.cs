@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.CommandLine.Parsing;
+using System.Globalization;
 using System.Text.Json;
 
 namespace ChangeSharp.Cli;
@@ -12,16 +13,55 @@ class Program
     internal const int ExitCodeValidationError = 3;
     internal const int ExitCodeConflict = 4;
 
+    private static readonly Option<bool> JsonOption = new("--json") { Description = "Output in JSON format for machine consumption." };
+    private static readonly Argument<string> MessageArgument = new("message")
+    {
+        Description = "Description of the changes.",
+        Arity = ArgumentArity.ZeroOrOne
+    };
+    private static readonly Option<bool> AddedOption = new("--added") { Description = "Mark change as Added." };
+    private static readonly Option<bool> ChangedOption = new("--changed") { Description = "Mark change as Changed." };
+    private static readonly Option<bool> FixedOption = new("--fixed") { Description = "Mark change as Fixed." };
+    private static readonly Option<bool> RemovedOption = new("--removed") { Description = "Mark change as Removed." };
+    private static readonly Option<bool> DeprecatedOption = new("--deprecated") { Description = "Mark change as Deprecated." };
+    private static readonly Option<bool> SecurityOption = new("--security") { Description = "Mark change as Security." };
+    private static readonly Option<bool> BreakingOption = new("--breaking") { Description = "Mark change as Breaking Changes." };
+    private static readonly Option<string> FileOption = new("--file") { Description = "Read the change description from a file instead of the message argument, stdin, or a prompt." };
+    private static readonly Option<bool> AllowMajorOption = new("--allow-major") { Description = "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact." };
+    private static readonly Option<string> ApiMinLevelOption = new("--api-min-level") { Description = "Minimum API impact level (patch, minor, major). Fails if fragments are below this level." };
+    private static readonly Option<bool> ApiMinLevelWarnOption = new("--api-min-level-warn") { Description = "Only warn if --api-min-level is not met, do not fail." };
+    private static readonly Option<bool> DryRunOption = new("--dry-run") { Description = "Display what would happen without making any changes." };
+    private static readonly Option<bool> SeparateOption = new("--separate") { Description = "Create a new fragment file instead of appending to the open changelist." };
+    private static readonly Option<string> FragmentTargetOption = new("--fragment") { Description = "Append to a specific fragment file in the unreleased directory." };
+    private static readonly Option<string> ChangelistNameOption = new("--changelist") { Description = "Append to (or create) a deterministically named changelist file." };
+
     static async Task<int> Main(string[] args)
     {
+        ParseResult parseResult = CreateRootCommand().Parse(args);
+        return await parseResult.InvokeAsync();
+    }
+
+    static RootCommand CreateRootCommand()
+    {
         var rootCommand = new RootCommand("ChangeSharp - Keep a Changelog. Derive the version.");
+        rootCommand.Add(BuildInitCommand());
+        rootCommand.Add(BuildNewCommand());
+        rootCommand.Add(BuildAddCommand());
+        rootCommand.Add(BuildStatusCommand());
+        rootCommand.Add(BuildValidateCommand());
+        rootCommand.Add(BuildReleaseCommand());
+        rootCommand.Add(BuildPublishCommand());
+        rootCommand.Add(BuildPrereleaseCommand());
+        rootCommand.Add(BuildRemoveCommand());
+        return rootCommand;
+    }
 
-        var jsonOption = new Option<bool>("--json") { Description = "Output in JSON format for machine consumption." };
-
-        var initCommand = new Command("init", "Initialize ChangeSharp configuration and directory structure.") { jsonOption };
+    private static Command BuildInitCommand()
+    {
+        var initCommand = new Command("init", "Initialize ChangeSharp configuration and directory structure.") { JsonOption };
         initCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
+            var o = Out(parseResult);
             try
             {
                 var manager = new WorkspaceManager();
@@ -66,121 +106,152 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(initCommand);
+        return initCommand;
+    }
 
-        var messageArgument = new Argument<string>("message")
-        {
-            Description = "Description of the changes.",
-            Arity = ArgumentArity.ZeroOrOne
-        };
-
-        var addedOption      = new Option<bool>("--added")      { Description = "Mark change as Added." };
-        var changedOption    = new Option<bool>("--changed")    { Description = "Mark change as Changed." };
-        var fixedOption      = new Option<bool>("--fixed")      { Description = "Mark change as Fixed." };
-        var removedOption    = new Option<bool>("--removed")    { Description = "Mark change as Removed." };
-        var deprecatedOption = new Option<bool>("--deprecated") { Description = "Mark change as Deprecated." };
-        var securityOption   = new Option<bool>("--security")   { Description = "Mark change as Security." };
-        var breakingOption   = new Option<bool>("--breaking")   { Description = "Mark change as Breaking Changes." };
-
-        var fileOption = new Option<string>("--file") { Description = "Read the change description from a file instead of the message argument, stdin, or a prompt." };
-        var allowMajorOption = new Option<bool>("--allow-major") { Description = "Allow a fragment whose impact exceeds SemverPolicy.MaxImpact." };
-
+    private static Command BuildNewCommand()
+    {
         var newCommand = new Command("new", "Create a new unreleased changelog fragment.")
         {
-            messageArgument, addedOption, changedOption, fixedOption,
-            removedOption, deprecatedOption, securityOption, breakingOption,
-            fileOption, allowMajorOption, jsonOption,
+            MessageArgument, AddedOption, ChangedOption, FixedOption,
+            RemovedOption, DeprecatedOption, SecurityOption, BreakingOption,
+            FileOption, AllowMajorOption, JsonOption,
         };
+        newCommand.SetAction(parseResult => RunFragmentAction(parseResult, Out(parseResult), forceSeparate: true));
+        return newCommand;
+    }
 
-        newCommand.SetAction(parseResult =>
+    private static Command BuildAddCommand()
+    {
+        var addCommand = new Command("add", "Add a change to the open changelist, or create a new fragment file.")
         {
-            var o = Out(parseResult, jsonOption);
-            string? message = parseResult.GetValue(messageArgument);
+            MessageArgument, AddedOption, ChangedOption, FixedOption,
+            RemovedOption, DeprecatedOption, SecurityOption, BreakingOption,
+            FileOption, AllowMajorOption, SeparateOption, FragmentTargetOption, ChangelistNameOption, JsonOption,
+        };
+        addCommand.SetAction(parseResult => RunFragmentAction(parseResult, Out(parseResult), forceSeparate: false));
+        return addCommand;
+    }
 
-            string? messageFile = parseResult.GetValue(fileOption);
-            if (messageFile != null)
+    private static int RunFragmentAction(ParseResult parseResult, Output o, bool forceSeparate)
+    {
+        var (message, messageError) = ResolveFragmentMessage(parseResult, o);
+        if (messageError.HasValue) return messageError.Value;
+
+        string? mappedCategory = CategoryFromFlags(
+            parseResult.GetValue(BreakingOption), parseResult.GetValue(RemovedOption),
+            parseResult.GetValue(ChangedOption), parseResult.GetValue(DeprecatedOption),
+            parseResult.GetValue(FixedOption), parseResult.GetValue(SecurityOption));
+
+        bool anyFlagCategory = parseResult.GetValue(AddedOption) || mappedCategory != null;
+        bool allowMajor = parseResult.GetValue(AllowMajorOption);
+        bool separate = forceSeparate || parseResult.GetValue(SeparateOption);
+        string? fragmentTarget = forceSeparate ? null : parseResult.GetValue(FragmentTargetOption);
+        string? changelistName = forceSeparate ? null : parseResult.GetValue(ChangelistNameOption);
+
+        while (true)
+        {
+            string category = ChooseCategory(parseResult, o, allowMajor, anyFlagCategory, mappedCategory, out int? categoryError);
+            if (categoryError.HasValue) return categoryError.Value;
+
+            int result = TryAppendFragment(o, message, category, allowMajor, anyFlagCategory, separate, fragmentTarget, changelistName);
+            if (result != RetryInteractive)
+                return result;
+        }
+    }
+
+    private const int RetryInteractive = -1;
+
+    private static (string? Message, int? Error) ResolveFragmentMessage(ParseResult parseResult, Output o)
+    {
+        string? message = parseResult.GetValue(MessageArgument);
+        string? messageFile = parseResult.GetValue(FileOption);
+
+        if (messageFile != null)
+        {
+            if (!File.Exists(messageFile))
+                return (null, o.Err($"File not found: {messageFile}", ExitCodeGenericError));
+            return (File.ReadAllText(messageFile).Trim(), null);
+        }
+
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            message = Console.IsInputRedirected
+                ? Console.In.ReadToEnd().Trim()
+                : PromptForMessage();
+        }
+
+        if (string.IsNullOrWhiteSpace(message))
+            return (null, o.Err("Description is required.", ExitCodeValidationError));
+
+        return (message, null);
+    }
+
+    private static string ChooseCategory(ParseResult parseResult, Output o, bool allowMajor, bool anyFlagCategory, string? mappedCategory, out int? error)
+    {
+        error = null;
+
+        if (anyFlagCategory)
+            return mappedCategory ?? "Added";
+
+        if (Console.IsInputRedirected)
+        {
+            error = o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
+            return "";
+        }
+
+        return PromptForCategory(allowMajor);
+    }
+
+    private static int TryAppendFragment(Output o, string message, string category, bool allowMajor, bool anyFlagCategory, bool separate, string? fragmentTarget, string? changelistName)
+    {
+        try
+        {
+            var manager = new WorkspaceManager();
+            string? blockReason = manager.GetCreateFragmentError(category, allowMajor);
+            if (blockReason != null)
             {
-                if (!File.Exists(messageFile))
-                    return o.Err($"File not found: {messageFile}", ExitCodeGenericError);
-                message = File.ReadAllText(messageFile).Trim();
+                if (anyFlagCategory || Console.IsInputRedirected)
+                    return o.Err(blockReason, ExitCodeValidationError);
+                Console.WriteLine();
+                Console.WriteLine($"  {blockReason}");
+                Console.WriteLine("  Choose another category, or rerun with --allow-major.");
+                return RetryInteractive;
             }
-            else if (string.IsNullOrWhiteSpace(message))
+
+            var (fragmentPath, appended, formattedCategory) = manager.AppendFragment(message, category, separate, fragmentTarget, changelistName);
+            return o.Ok(new
             {
-                message = Console.IsInputRedirected
-                    ? Console.In.ReadToEnd().Trim()
-                    : PromptForMessage();
-            }
+                filename = Path.GetFileName(fragmentPath),
+                category = formattedCategory,
+                appended,
+                path = fragmentPath
+            }, () => Console.WriteLine(appended
+                ? $"Added to {Path.GetFileName(fragmentPath)} under '{formattedCategory}'"
+                : $"Created fragment: {Path.GetFileName(fragmentPath)} under category '{formattedCategory}'"));
+        }
+        catch (Exception ex) { return o.Err(ex.Message); }
+    }
 
-            if (string.IsNullOrWhiteSpace(message))
-                return o.Err("Description is required.", ExitCodeValidationError);
+    private static string? CategoryFromFlags(bool breaking, bool removed, bool changed, bool deprecated, bool fixedOpt, bool security) =>
+        breaking ? "Breaking Changes"
+        : removed ? "Removed"
+        : changed ? "Changed"
+        : deprecated ? "Deprecated"
+        : fixedOpt ? "Fixed"
+        : security ? "Security"
+        : null;
 
-            string category;
-            bool added = parseResult.GetValue(addedOption);
-            bool changed = parseResult.GetValue(changedOption);
-            bool fixedOpt = parseResult.GetValue(fixedOption);
-            bool removed = parseResult.GetValue(removedOption);
-            bool deprecated = parseResult.GetValue(deprecatedOption);
-            bool security = parseResult.GetValue(securityOption);
-            bool breaking = parseResult.GetValue(breakingOption);
-            bool allowMajor = parseResult.GetValue(allowMajorOption);
-
-            bool anyCategoryOptionProvided = added || changed || fixedOpt || removed || deprecated || security || breaking;
-
-            while (true)
-            {
-                if (anyCategoryOptionProvided)
-                {
-                    category = breaking ? "Breaking Changes"
-                             : removed ? "Removed"
-                             : changed ? "Changed"
-                             : deprecated ? "Deprecated"
-                             : fixedOpt ? "Fixed"
-                             : security ? "Security"
-                             : "Added";
-                }
-                else if (Console.IsInputRedirected)
-                {
-                    return o.Err("Category is required when non-interactive. Use one of --added, --changed, --fixed, --removed, --deprecated, --security, --breaking.", ExitCodeValidationError);
-                }
-                else
-                {
-                    category = PromptForCategory(allowMajor);
-                }
-
-                try
-                {
-                    var manager = new WorkspaceManager();
-                    string? blockReason = manager.GetCreateFragmentError(category, allowMajor);
-                    if (blockReason != null)
-                    {
-                        if (anyCategoryOptionProvided || Console.IsInputRedirected)
-                            return o.Err(blockReason, ExitCodeValidationError);
-                        Console.WriteLine();
-                        Console.WriteLine($"  {blockReason}");
-                        Console.WriteLine("  Choose another category, or rerun with --allow-major.");
-                        continue;
-                    }
-                    string filePath = manager.CreateFragment(message, category);
-                    return o.Ok(new
-                    {
-                        filename = Path.GetFileName(filePath),
-                        category,
-                        path = filePath
-                    }, () => Console.WriteLine($"Created fragment: {Path.GetFileName(filePath)} under category '{category}'"));
-                }
-                catch (Exception ex) { return o.Err(ex.Message); }
-            }
-        });
-        rootCommand.Add(newCommand);
-
+    private static Command BuildStatusCommand()
+    {
         var nextOnlyOption = new Option<bool>("--next-only") { Description = "Only output the next version number." };
         var statusCommand = new Command("status", "Show the status of unreleased fragments and computed version bump.")
         {
-            nextOnlyOption, jsonOption
+            nextOnlyOption, JsonOption
         };
         statusCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
+            var o = Out(parseResult);
             bool nextOnly = parseResult.GetValue(nextOnlyOption);
             try
             {
@@ -224,18 +295,20 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(statusCommand);
+        return statusCommand;
+    }
 
+    private static Command BuildValidateCommand()
+    {
         var requireFragmentsOption = new Option<bool>("--require-fragments") { Description = "Fail if no unreleased fragments are found." };
-        var apiMinLevelOption = new Option<string>("--api-min-level") { Description = "Minimum API impact level (patch, minor, major). Fails if fragments are below this level." };
-        var apiMinLevelWarnOption = new Option<bool>("--api-min-level-warn") { Description = "Only warn if --api-min-level is not met, do not fail." };
+        var apiSurfaceOption = new Option<bool>("--api-surface") { Description = "Validate committed public-surface baselines and gate fragments against the derived impact." };
         var validateCommand = new Command("validate", "Validate unreleased fragments for correct format.")
         {
-            requireFragmentsOption, apiMinLevelOption, apiMinLevelWarnOption, jsonOption
+            requireFragmentsOption, ApiMinLevelOption, ApiMinLevelWarnOption, apiSurfaceOption, JsonOption
         };
         validateCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
+            var o = Out(parseResult);
             bool requireFragments = parseResult.GetValue(requireFragmentsOption);
             try
             {
@@ -253,99 +326,76 @@ class Program
 
                 if (!hasErrors)
                 {
-                    string? apiMinLevelValue = parseResult.GetValue(apiMinLevelOption);
-                    if (apiMinLevelValue != null)
+                    if (parseResult.GetValue(apiSurfaceOption))
                     {
-                        bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
-                        var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(apiMinLevelValue);
-                        if (!pass)
-                        {
-                            string message = $"API surface requires at least a '{apiMinLevelValue}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).";
-                            if (warnOnly)
-                                o.Warn(message);
-                            else
-                                return o.Err(message, ExitCodeValidationError);
-                        }
+                        int surfaceResult = CheckApiSurface(parseResult, manager, o);
+                        if (surfaceResult != 0) return surfaceResult;
+                    }
+                    else
+                    {
+                        int? gateResult = CheckApiMinLevelGate(parseResult, manager, o);
+                        if (gateResult.HasValue) return gateResult.Value;
                     }
                 }
 
                 var jsonResults = results.Select(r => new { file = r.FilePath, valid = r.IsValid, errors = r.Errors }).ToList();
 
-                if (hasErrors)
-                {
-                    return o.Err("Validation failed.", ExitCodeValidationError, new
-                    {
-                        fragmentsValidated = results.Count,
-                        results = jsonResults
-                    }, () =>
-                    {
-                        foreach (var r in results)
-                        {
-                            if (r.IsValid)
-                                Console.WriteLine($"\u2713 {r.FilePath}: Valid");
-                            else
-                            {
-                                Console.WriteLine($"\u2717 {r.FilePath}: Invalid");
-                                foreach (var e in r.Errors)
-                                    Console.WriteLine($"  - {e}");
-                            }
-                        }
-                        Console.WriteLine($"\n{results.Count(r => !r.IsValid)} fragment(s) failed validation.");
-                    });
-                }
-
-                return o.Ok(new
-                {
-                    fragmentsValidated = results.Count,
-                    results = jsonResults
-                }, () =>
-                {
-                    Console.WriteLine("All fragments are valid.");
-                });
+                return hasErrors
+                    ? ReportValidationErrors(o, results, jsonResults)
+                    : ReportValidationSuccess(o, results, jsonResults);
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(validateCommand);
+        return validateCommand;
+    }
 
-        var dryRunOption = new Option<bool>("--dry-run") { Description = "Display what would happen without making any changes." };
+    private static int ReportValidationErrors(Output o, List<ValidationResult> results, object jsonResults) =>
+        o.Err("Validation failed.", ExitCodeValidationError, new
+        {
+            fragmentsValidated = results.Count,
+            results = jsonResults
+        }, () =>
+        {
+            foreach (var r in results)
+            {
+                if (r.IsValid)
+                    Console.WriteLine($"\u2713 {r.FilePath}: Valid");
+                else
+                {
+                    Console.WriteLine($"\u2717 {r.FilePath}: Invalid");
+                    foreach (var e in r.Errors)
+                        Console.WriteLine($"  - {e}");
+                }
+            }
+            Console.WriteLine($"\n{results.Count(r => !r.IsValid)} fragment(s) failed validation.");
+        });
+
+    private static int ReportValidationSuccess(Output o, List<ValidationResult> results, object jsonResults) =>
+        o.Ok(new
+        {
+            fragmentsValidated = results.Count,
+            results = jsonResults
+        }, () => Console.WriteLine("All fragments are valid."));
+
+    private static Command BuildReleaseCommand()
+    {
         var allowEmptyOption = new Option<bool>("--allow-empty") { Description = "Exit with success even if no unreleased fragments are found." };
         var requireApprovalOption = new Option<bool>("--require-approval") { Description = "Require explicit approval (CHANGESHARP_ALLOW_UNSAFE_RELEASE) to proceed." };
         var allowMajorReleaseOption = new Option<bool>("--allow-major") { Description = "Allow a release whose impact exceeds SemverPolicy.MaxImpact." };
         var releaseCommand = new Command("release", "Aggregate fragments, bump version, update CHANGELOG.md, and clean up.")
         {
-            dryRunOption, allowEmptyOption, requireApprovalOption,
-            apiMinLevelOption, apiMinLevelWarnOption, allowMajorReleaseOption, jsonOption
+            DryRunOption, allowEmptyOption, requireApprovalOption,
+            ApiMinLevelOption, ApiMinLevelWarnOption, allowMajorReleaseOption, JsonOption
         };
         releaseCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
-            bool dryRun = parseResult.GetValue(dryRunOption);
+            var o = Out(parseResult);
+            bool dryRun = ResolveDryRun(parseResult, o);
             bool allowEmpty = parseResult.GetValue(allowEmptyOption);
             bool requireApproval = parseResult.GetValue(requireApprovalOption);
 
-            if (!dryRun)
-            {
-                try
-                {
-                    var manager = new WorkspaceManager();
-                    if (manager.ShouldDryRunByDefault())
-                    {
-                        dryRun = true;
-                        o.Warn("Security.DryRunByDefault is enabled; running in dry-run mode.");
-                    }
-                }
-                catch (InvalidOperationException ex)
-                {
-                    o.Warn($"Could not read config to check Security.DryRunByDefault: {ex.Message}");
-                }
-            }
-
-            if (requireApproval && !dryRun)
-            {
-                string? envAllow = Environment.GetEnvironmentVariable("CHANGESHARP_ALLOW_UNSAFE_RELEASE");
-                if (envAllow != "true")
-                    return o.Err("Release blocked by --require-approval. Set CHANGESHARP_ALLOW_UNSAFE_RELEASE=true to proceed.", ExitCodeGenericError, new { blockedBy = "approval_gate" });
-            }
+            int? approvalError = CheckApproval(requireApproval, dryRun, o);
+            if (approvalError.HasValue) return approvalError.Value;
 
             try
             {
@@ -364,59 +414,21 @@ class Program
 
                 if (dryRun)
                 {
-                    return o.Ok(new
-                    {
-                        dryRun = true,
-                        currentVersion = current,
-                        nextVersion = next,
-                        changes = merged.ToChangelogString(),
-                        sections = merged.Sections.ToDictionary(kv => kv.Key, kv => kv.Value),
-                        fragmentCount = count,
-                        versionTargets = targets
-                    }, () =>
-                    {
-                        Console.WriteLine("[Dry Run] Release would perform the following actions:");
-                        Console.WriteLine($"- Update CHANGELOG.md with a new version section: [{next}]");
-                        Console.WriteLine($"- Add the following changes to CHANGELOG.md:");
-                        Console.WriteLine(merged.ToChangelogString());
-                        Console.WriteLine($"- Delete {count} fragment(s) from the unreleased directory.");
-
-                        if (targets.Any())
-                        {
-                            Console.WriteLine($"- Propagate version {next} to the following files:");
-                            foreach (var target in targets)
-                                Console.WriteLine($"  * {target}");
-                        }
-                        else
-                        {
-                            Console.WriteLine("- No version propagation targets configured.");
-                        }
-                        Console.WriteLine();
-                        Console.WriteLine("[Dry Run] No files were actually modified.");
-                    });
+                    return ShowDryRun(o, current, next, merged, count, targets);
                 }
 
-                string? apiMinLevelValue = parseResult.GetValue(apiMinLevelOption);
-                bool warnOnly = parseResult.GetValue(apiMinLevelWarnOption);
-                bool allowMajor = parseResult.GetValue(allowMajorReleaseOption);
+                var gate = manager.GetReleaseGateResult(
+                    parseResult.GetValue(ApiMinLevelOption), parseResult.GetValue(allowMajorReleaseOption));
 
-                var gate = manager.GetReleaseGateResult(apiMinLevelValue, allowMajor);
                 if (gate.Blocked)
                 {
+                    bool warnOnly = parseResult.GetValue(ApiMinLevelWarnOption);
                     if (gate.CapExceeded || !warnOnly)
                         return o.Err(gate.Message, ExitCodeValidationError);
                     o.Warn(gate.Message);
                 }
 
-                var (nextVersion, releaseWarnings) = manager.Release(DateTime.Today, dryRun);
-                var allWarnings = releaseWarnings.Append(gate.CapExceeded ? "Major bump explicitly allowed via --allow-major." : null)
-                    .Where(w => w != null)
-                    .Cast<string>()
-                    .ToList();
-                foreach (var w in allWarnings)
-                    Console.Error.WriteLine($"Warning: {w}");
-                return o.Ok(new { releasedVersion = nextVersion, warnings = allWarnings },
-                    () => Console.WriteLine($"Release successful! New version: {nextVersion}"));
+                return FinishRelease(manager, o, dryRun, gate);
             }
             catch (InvalidOperationException ex) when (ex.Message.Contains("Conflict"))
             {
@@ -424,16 +436,64 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(releaseCommand);
+        return releaseCommand;
+    }
 
+    private static bool ResolveDryRun(ParseResult parseResult, Output o)
+    {
+        bool dryRun = parseResult.GetValue(DryRunOption);
+        if (dryRun) return true;
+
+        try
+        {
+            var manager = new WorkspaceManager();
+            if (manager.ShouldDryRunByDefault())
+            {
+                o.Warn("Security.DryRunByDefault is enabled; running in dry-run mode.");
+                return true;
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            o.Warn($"Could not read config to check Security.DryRunByDefault: {ex.Message}");
+        }
+
+        return false;
+    }
+
+    private static int? CheckApproval(bool requireApproval, bool dryRun, Output o)
+    {
+        if (!requireApproval || dryRun) return null;
+
+        string? envAllow = Environment.GetEnvironmentVariable("CHANGESHARP_ALLOW_UNSAFE_RELEASE");
+        if (envAllow != "true")
+            return o.Err("Release blocked by --require-approval. Set CHANGESHARP_ALLOW_UNSAFE_RELEASE=true to proceed.", ExitCodeGenericError, new { blockedBy = "approval_gate" });
+        return null;
+    }
+
+    private static int FinishRelease(WorkspaceManager manager, Output o, bool dryRun, (bool Blocked, string Message, bool CapExceeded) gate)
+    {
+        var (nextVersion, releaseWarnings) = manager.Release(DateTime.Today, dryRun);
+        var allWarnings = releaseWarnings.Append(gate.CapExceeded ? "Major bump explicitly allowed via --allow-major." : null)
+            .Where(w => w != null)
+            .Cast<string>()
+            .ToList();
+        foreach (var w in allWarnings)
+            Console.Error.WriteLine($"Warning: {w}");
+        return o.Ok(new { releasedVersion = nextVersion, warnings = allWarnings },
+            () => Console.WriteLine($"Release successful! New version: {nextVersion}"));
+    }
+
+    private static Command BuildPublishCommand()
+    {
         var versionOption = new Option<string>("--version") { Description = "Specific released version to output (default: latest)." };
         var publishCommand = new Command("publish", "Output a released version and its changelog segment (for creating a forge release).")
         {
-            versionOption, jsonOption
+            versionOption, JsonOption
         };
         publishCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
+            var o = Out(parseResult);
             try
             {
                 var manager = new WorkspaceManager();
@@ -452,26 +512,29 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(publishCommand);
+        return publishCommand;
+    }
 
-        var branchOption  = new Option<string>("--branch") { Description = "Specific branch name to use for pre-release." };
-        var listOption    = new Option<bool>("--list") { Description = "List all active pre-releases." };
+    private static Command BuildPrereleaseCommand()
+    {
+        var branchOption = new Option<string>("--branch") { Description = "Specific branch name to use for pre-release." };
+        var listOption = new Option<bool>("--list") { Description = "List all active pre-releases." };
         var promoteOption = new Option<bool>("--promote") { Description = "Promote the latest pre-release to a final release." };
         var channelOption = new Option<string>("--channel") { Description = "Optional release channel (e.g. alpha, beta, rc)." };
 
         var prereleaseCommand = new Command("prerelease", "Handle pre-release versions based on branches.")
         {
-            branchOption, listOption, promoteOption, channelOption, dryRunOption, jsonOption
+            branchOption, listOption, promoteOption, channelOption, DryRunOption, JsonOption
         };
 
         prereleaseCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
+            var o = Out(parseResult);
             string? branch = parseResult.GetValue(branchOption);
-            bool list      = parseResult.GetValue(listOption);
-            bool promote   = parseResult.GetValue(promoteOption);
+            bool list = parseResult.GetValue(listOption);
+            bool promote = parseResult.GetValue(promoteOption);
             string? channel = parseResult.GetValue(channelOption);
-            bool dryRun    = parseResult.GetValue(dryRunOption);
+            bool dryRun = parseResult.GetValue(DryRunOption);
 
             try
             {
@@ -519,9 +582,12 @@ class Program
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(prereleaseCommand);
+        return prereleaseCommand;
+    }
 
-        var listOption2 = new Option<bool>("--list") { Description = "List all unreleased fragments." };
+    private static Command BuildRemoveCommand()
+    {
+        var listOption = new Option<bool>("--list") { Description = "List all unreleased fragments." };
         var allOption = new Option<bool>("--all") { Description = "Remove all unreleased fragments." };
         var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation for --all." };
         var fragmentArgument = new Argument<string>("fragment")
@@ -531,12 +597,12 @@ class Program
         };
         var removeCommand = new Command("remove", "Remove an unreleased changelog fragment.")
         {
-            fragmentArgument, listOption2, allOption, yesOption, jsonOption
+            fragmentArgument, listOption, allOption, yesOption, JsonOption
         };
         removeCommand.SetAction(parseResult =>
         {
-            var o = Out(parseResult, jsonOption);
-            bool list = parseResult.GetValue(listOption2);
+            var o = Out(parseResult);
+            bool list = parseResult.GetValue(listOption);
             bool all = parseResult.GetValue(allOption);
             bool yes = parseResult.GetValue(yesOption);
             string? fragment = parseResult.GetValue(fragmentArgument);
@@ -544,83 +610,289 @@ class Program
             try
             {
                 var manager = new WorkspaceManager();
-                var files = manager.ListFragmentFiles();
-                var shortNames = files.Select(Path.GetFileName).ToArray();
+                var shortNames = manager.ListFragmentFiles().Select(Path.GetFileName).ToArray();
 
                 if (list)
-                {
-                    return o.Ok(new { fragments = shortNames }, () =>
-                    {
-                        if (shortNames.Length == 0)
-                            Console.WriteLine("No unreleased fragments found.");
-                        else
-                        {
-                            Console.WriteLine("Unreleased fragments:");
-                            foreach (var f in shortNames)
-                                Console.WriteLine($"  {f}");
-                        }
-                    });
-                }
+                    return ShowFragmentList(o, shortNames);
 
                 if (all)
-                {
-                    if (shortNames.Length == 0)
-                        return o.Ok(new { removed = 0 }, () => Console.WriteLine("No unreleased fragments found."));
-
-                    if (!yes)
-                    {
-                        Console.Error.WriteLine($"This will remove {shortNames.Length} fragment(s):");
-                        foreach (var f in shortNames)
-                            Console.Error.WriteLine($"  {f}");
-                        Console.Error.Write("Are you sure? (y/N): ");
-                        var response = Console.ReadLine()?.Trim().ToLowerInvariant();
-                        if (response != "y" && response != "yes")
-                            return o.Ok(new { removed = 0 }, () => Console.WriteLine("Removal cancelled."));
-                    }
-
-                    int count = manager.RemoveAllFragments();
-                    return o.Ok(new { removed = count },
-                        () => Console.WriteLine($"Removed {count} fragment(s)."));
-                }
+                    return RemoveAllFragments(manager, o, shortNames, yes);
 
                 if (fragment == null)
-                {
-                    if (shortNames.Length == 0)
-                        return o.Ok(new { fragments = Array.Empty<string>() },
-                            () => Console.WriteLine("No unreleased fragments found."));
+                    return ShowRemoveUsage(o, shortNames);
 
-                    return o.Ok(new { fragments = shortNames }, () =>
-                    {
-                        Console.WriteLine("Usage: changesharp remove <fragment>");
-                        Console.WriteLine("       changesharp remove --list");
-                        Console.WriteLine("       changesharp remove --all");
-                        Console.WriteLine();
-                        Console.WriteLine("Available fragments:");
-                        foreach (var f in shortNames)
-                            Console.WriteLine($"  {f}");
-                    });
-                }
-
-                string fullPath = files.FirstOrDefault(f =>
-                    Path.GetFileName(f).Equals(fragment, StringComparison.OrdinalIgnoreCase) ||
-                    f.EndsWith(fragment, StringComparison.OrdinalIgnoreCase)) ?? "";
-
-                if (string.IsNullOrEmpty(fullPath) || !manager.RemoveFragment(fullPath))
-                    return o.Err($"Fragment '{fragment}' not found.", ExitCodeGenericError);
-
-                return o.Ok(new { removed = true, fragment },
-                    () => Console.WriteLine($"Removed fragment: {fragment}"));
+                return RemoveSingleFragment(manager, o, fragment);
             }
             catch (Exception ex) { return o.Err(ex.Message); }
         });
-        rootCommand.Add(removeCommand);
-
-        ParseResult parseResult = rootCommand.Parse(args);
-        return await parseResult.InvokeAsync();
+        return removeCommand;
     }
 
-    private static Output Out(ParseResult pr, Option<bool> jsonOption) =>
-        new(pr.GetValue(jsonOption));
+    private static int ShowFragmentList(Output o, string[] shortNames) =>
+        o.Ok(new { fragments = shortNames }, () =>
+        {
+            if (shortNames.Length == 0)
+                Console.WriteLine("No unreleased fragments found.");
+            else
+            {
+                Console.WriteLine("Unreleased fragments:");
+                foreach (var f in shortNames)
+                    Console.WriteLine($"  {f}");
+            }
+        });
+
+    private static int RemoveAllFragments(WorkspaceManager manager, Output o, string[] shortNames, bool yes)
+    {
+        if (shortNames.Length == 0)
+            return o.Ok(new { removed = 0 }, () => Console.WriteLine("No unreleased fragments found."));
+
+        if (!yes)
+        {
+            Console.Error.WriteLine($"This will remove {shortNames.Length} fragment(s):");
+            foreach (var f in shortNames)
+                Console.Error.WriteLine($"  {f}");
+            Console.Error.Write("Are you sure? (y/N): ");
+            var response = Console.ReadLine()?.Trim().ToLowerInvariant();
+            if (response != "y" && response != "yes")
+                return o.Ok(new { removed = 0 }, () => Console.WriteLine("Removal cancelled."));
+        }
+
+        int count = manager.RemoveAllFragments();
+        return o.Ok(new { removed = count },
+            () => Console.WriteLine($"Removed {count} fragment(s)."));
+    }
+
+    private static int ShowRemoveUsage(Output o, string[] shortNames) =>
+        o.Ok(new { fragments = shortNames }, () =>
+        {
+            if (shortNames.Length == 0)
+            {
+                Console.WriteLine("No unreleased fragments found.");
+                return;
+            }
+
+            Console.WriteLine("Usage: changesharp remove <fragment>");
+            Console.WriteLine("       changesharp remove --list");
+            Console.WriteLine("       changesharp remove --all");
+            Console.WriteLine();
+            Console.WriteLine("Available fragments:");
+            foreach (var f in shortNames)
+                Console.WriteLine($"  {f}");
+        });
+
+    private static int RemoveSingleFragment(WorkspaceManager manager, Output o, string fragment)
+    {
+        var files = manager.ListFragmentFiles();
+        string fullPath = files.FirstOrDefault(f =>
+            Path.GetFileName(f).Equals(fragment, StringComparison.OrdinalIgnoreCase) ||
+            f.EndsWith(fragment, StringComparison.OrdinalIgnoreCase)) ?? "";
+
+        if (string.IsNullOrEmpty(fullPath) || !manager.RemoveFragment(fullPath))
+            return o.Err($"Fragment '{fragment}' not found.", ExitCodeGenericError);
+
+        return o.Ok(new { removed = true, fragment },
+            () => Console.WriteLine($"Removed fragment: {fragment}"));
+    }
+
+    private static Output Out(ParseResult pr) =>
+        new(pr.GetValue(JsonOption));
+
+    private static int? CheckApiMinLevelGate(ParseResult parseResult, WorkspaceManager manager, Output o)
+    {
+        string? apiMinLevelValue = parseResult.GetValue(ApiMinLevelOption);
+        if (apiMinLevelValue == null) return null;
+
+        bool warnOnly = parseResult.GetValue(ApiMinLevelWarnOption);
+        var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(apiMinLevelValue);
+        if (pass) return null;
+
+        string message = $"API surface requires at least a '{apiMinLevelValue}' bump, but fragments only reach '{maxLevelName}' (level {maxImpact}).";
+        if (warnOnly)
+            o.Warn(message);
+        else
+            return o.Err(message, ExitCodeValidationError);
+        return null;
+    }
+
+    private static int ShowDryRun(Output o, string current, string next, ChangeSet merged, int count, IEnumerable<string> targets)
+    {
+        var targetsList = targets.ToList();
+        return o.Ok(new
+        {
+            dryRun = true,
+            currentVersion = current,
+            nextVersion = next,
+            changes = merged.ToChangelogString(),
+            sections = merged.Sections.ToDictionary(kv => kv.Key, kv => kv.Value),
+            fragmentCount = count,
+            versionTargets = targetsList
+        }, () =>
+        {
+            Console.WriteLine("[Dry Run] Release would perform the following actions:");
+            Console.WriteLine($"- Update CHANGELOG.md with a new version section: [{next}]");
+            Console.WriteLine("- Add the following changes to CHANGELOG.md:");
+            Console.WriteLine(merged.ToChangelogString());
+            Console.WriteLine($"- Delete {count} fragment(s) from the unreleased directory.");
+
+            if (targetsList.Any())
+            {
+                Console.WriteLine($"- Propagate version {next} to the following files:");
+                foreach (var target in targetsList)
+                    Console.WriteLine($"  * {target}");
+            }
+            else
+            {
+                Console.WriteLine("- No version propagation targets configured.");
+            }
+            Console.WriteLine();
+            Console.WriteLine("[Dry Run] No files were actually modified.");
+        });
+    }
+
+    private static int CheckApiSurface(ParseResult parseResult, WorkspaceManager manager, Output o)
+    {
+        string baselineDir = Path.Combine(Directory.GetCurrentDirectory(), "tests", "public-api");
+        if (!Directory.Exists(baselineDir))
+            return o.Err($"No public-surface baselines found in '{baselineDir}'. Run scripts/update-public-api.sh first.", ExitCodeGenericError);
+
+        var generated = GenerateSurfaces();
+        var committed = ReadBaselines(baselineDir);
+
+        var (match, message) = PublicSurfaceValidator.BaselinesMatch(generated, committed);
+        if (!match)
+            return o.Err(message ?? "Public-surface baselines are out of date.", ExitCodeValidationError);
+
+        var baseSurface = ReadBaselinesFromGit("origin/main");
+        string level = PublicSurfaceValidator.DeriveImpact(baseSurface, committed);
+
+        if (level != "patch")
+        {
+            manager.GetStatus(out int count, out _, out _, out _);
+            if (count == 0)
+                return o.Err($"API surface changed (impact '{level}'), but no fragments are recorded. Add a fragment at or above this level.", ExitCodeValidationError);
+
+            var (pass, maxImpact, maxLevelName) = manager.CheckApiMinLevel(level);
+            if (!pass)
+                return o.Err($"API surface changed (impact '{level}'), but fragments only reach '{maxLevelName}' (level {maxImpact}).", ExitCodeValidationError);
+        }
+
+        return o.Ok(new { impact = level, baselines = generated.Keys.OrderBy(k => k).ToList() },
+            () => Console.WriteLine($"Public-surface baselines up to date (impact '{level}')."));
+    }
+
+    private static Dictionary<string, string> GenerateSurfaces()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+
+            var surfaces = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["cli-help.txt"] = GenerateCliHelp(CreateRootCommand()),
+                ["mcp-tools.json"] = JsonSerializer.Serialize(McpToolCatalog.Tools, new JsonSerializerOptions { WriteIndented = true }),
+                ["public-api.txt"] = GeneratePublicApi()
+            };
+
+            return surfaces;
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+    }
+
+    private static string GenerateCliHelp(RootCommand root)
+    {
+        var originalOut = Console.Out;
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+
+            using var sw = new StringWriter();
+            Console.SetOut(sw);
+
+            foreach (var cmd in new[] { root }.Concat(root.Subcommands))
+            {
+                if (cmd != root)
+                {
+                    sw.WriteLine();
+                    sw.WriteLine($"##### {cmd.Name} #####");
+                    sw.WriteLine();
+                }
+
+                string[] args = cmd == root ? new[] { "--help" } : new[] { cmd.Name, "--help" };
+                root.Parse(args).InvokeAsync().GetAwaiter().GetResult();
+            }
+
+            return sw.ToString();
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+    }
+
+    private static string GeneratePublicApi()
+    {
+        string api = PublicApiGenerator.ApiGenerator.GeneratePublicApi(typeof(WorkspaceManager).Assembly);
+        return api.Replace("\r\n", "\n").TrimEnd() + "\n";
+    }
+
+    private static Dictionary<string, string> ReadBaselines(string dir)
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var file in Directory.GetFiles(dir))
+            files[Path.GetFileName(file)] = File.ReadAllText(file);
+        return files;
+    }
+
+    private static Dictionary<string, string>? ReadBaselinesFromGit(string rev)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in new[] { "cli-help.txt", "mcp-tools.json", "public-api.txt" })
+        {
+            string? content = TryGitShow($"{rev}:tests/public-api/{name}");
+            if (content != null)
+                result[name] = content;
+        }
+        return result.Count > 0 ? result : null;
+    }
+
+    private static string? TryGitShow(string spec)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("git")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            psi.ArgumentList.Add("show");
+            psi.ArgumentList.Add(spec);
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process == null) return null;
+            string output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            return process.ExitCode == 0 ? output : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private static string? PromptForMessage()
     {

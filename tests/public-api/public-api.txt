@@ -63,6 +63,10 @@ namespace ChangeSharp
         public FragmentNamingConfig() { }
         public bool IncludeBranchName { get; set; }
     }
+    public static class McpToolCatalog
+    {
+        public static System.Text.Json.Nodes.JsonArray Tools { get; }
+    }
     public class NextVersionComputer
     {
         public NextVersionComputer() { }
@@ -84,6 +88,15 @@ namespace ChangeSharp
         public int MaxIdentifierLength { get; set; }
         public bool SanitizeBranchName { get; set; }
     }
+    public static class PublicSurfaceValidator
+    {
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "Match",
+                "Message"})]
+        public static System.ValueTuple<bool, string?> BaselinesMatch(System.Collections.Generic.IReadOnlyDictionary<string, string> generated, System.Collections.Generic.IReadOnlyDictionary<string, string> committed) { }
+        public static string DeriveImpact(System.Collections.Generic.IReadOnlyDictionary<string, string>? baseSurface, System.Collections.Generic.IReadOnlyDictionary<string, string> currentSurface) { }
+        public static string Normalize(string content) { }
+    }
     public class SecurityConfig
     {
         public SecurityConfig() { }
@@ -94,6 +107,7 @@ namespace ChangeSharp
     public class SemverPolicyConfig
     {
         public SemverPolicyConfig() { }
+        public System.Collections.Generic.Dictionary<string, string> BranchMaxImpact { get; set; }
         public System.Collections.Generic.Dictionary<string, string> Mappings { get; set; }
         public string MaxImpact { get; set; }
     }
@@ -119,6 +133,11 @@ namespace ChangeSharp
     public class WorkspaceManager
     {
         public WorkspaceManager(string? basePath = null) { }
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "FragmentPath",
+                "Appended",
+                "Category"})]
+        public System.ValueTuple<string, bool, string> AppendFragment(string message, string category, bool separate = false, string? targetFile = null, string? changelistName = null) { }
         [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
                 "Pass",
                 "MaxImpact",
@@ -161,6 +180,7 @@ namespace ChangeSharp
                 "CategoryImpact",
                 "MaxAllowed"})]
         public System.ValueTuple<bool, int, int> IsCategoryWithinMaxImpact(string category) { }
+        public bool IsDefaultBranch() { }
         public string[] ListFragmentFiles() { }
         [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
                 "Prereleases",

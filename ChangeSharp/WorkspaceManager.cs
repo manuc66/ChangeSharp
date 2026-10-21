@@ -255,7 +255,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     public (bool Pass, int MaxImpact, string MaxLevelName, int MaxAllowed, string[] OffendingCategories) CheckApiMaxLevel()
     {
         var config = LoadConfig();
-        int maxAllowed = NextVersionComputer.ParseImpact(config.SemverPolicy.MaxImpact);
+        var (maxAllowed, _) = ResolveMaxImpact(config);
         if (maxAllowed == 0)
             throw new ArgumentException($"Invalid SemverPolicy.MaxImpact '{config.SemverPolicy.MaxImpact}'. Valid values: patch, minor, major.", "MaxImpact");
 
@@ -281,7 +281,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     public (bool Allowed, int CategoryImpact, int MaxAllowed) IsCategoryWithinMaxImpact(string category)
     {
         var config = LoadConfig();
-        int maxAllowed = NextVersionComputer.ParseImpact(config.SemverPolicy.MaxImpact);
+        var (maxAllowed, _) = ResolveMaxImpact(config);
         if (maxAllowed == 0)
             throw new ArgumentException($"Invalid SemverPolicy.MaxImpact '{config.SemverPolicy.MaxImpact}'. Valid values: patch, minor, major.", "MaxImpact");
 
@@ -299,7 +299,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         var (allowed, categoryImpact, maxAllowed) = IsCategoryWithinMaxImpact(category);
         if (allowed) return null;
 
-        return $"Category '{category}' requires a {NextVersionComputer.ImpactName(categoryImpact)} bump, above the configured SemverPolicy.MaxImpact ({NextVersionComputer.ImpactName(maxAllowed)}). Use --allow-major to override.";
+        return $"Category '{category}' requires a {NextVersionComputer.ImpactName(categoryImpact)} bump, above the allowed impact ({NextVersionComputer.ImpactName(maxAllowed)}). Use --allow-major to override.";
     }
 
     public (bool Blocked, string Message, bool CapExceeded) GetReleaseGateResult(string? apiMinLevel, bool allowMajor)
@@ -316,7 +316,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         if (capExceeded && !allowMajor)
         {
             string categories = offendingCategories.Length > 0 ? $" ({string.Join(", ", offendingCategories)})" : "";
-            string message = $"Release would bump to '{maxLevelName2}' (level {maxImpact2}), above the configured SemverPolicy.MaxImpact ({NextVersionComputer.ImpactName(maxAllowed)}){categories}. Use --allow-major to proceed.";
+            string message = $"Release would bump to '{maxLevelName2}' (level {maxImpact2}), above the allowed impact ({NextVersionComputer.ImpactName(maxAllowed)}){categories}. Use --allow-major to proceed.";
             return (true, message, true);
         }
 
@@ -415,6 +415,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         return filePath;
     }
 
+    public (string FragmentPath, bool Appended, string Category) AppendFragment(
+        string message, string category, bool separate = false,
+        string? targetFile = null, string? changelistName = null)
+    {
+        var config = LoadConfig();
+        string unreleasedPath = Path.Combine(_basePath, config.UnreleasedDir);
+        if (!Directory.Exists(unreleasedPath))
+        {
+            Directory.CreateDirectory(unreleasedPath);
+        }
+
+        string formattedCategory = NormalizeCategory(category);
+        string? targetPath = null;
+
+        if (targetFile != null)
+        {
+            targetPath = Path.Combine(unreleasedPath, Path.GetFileName(targetFile));
+            if (!File.Exists(targetPath))
+                throw new InvalidOperationException($"Fragment '{targetFile}' not found in the unreleased directory.");
+        }
+        else if (changelistName != null)
+        {
+            targetPath = Path.Combine(unreleasedPath, $"{Slugify(changelistName)}.md");
+            if (!File.Exists(targetPath))
+            {
+                string newContent = $"### {formattedCategory}{Environment.NewLine}- {message}{Environment.NewLine}";
+                File.WriteAllText(targetPath, newContent, Encoding.UTF8);
+                return (targetPath, false, formattedCategory);
+            }
+        }
+        else if (!separate && !IsDefaultBranch())
+        {
+            // Append to the most recent fragment (the open changelist). On the
+            // default branch (trunk) a new file is created instead to stay
+            // conflict-free.
+            var mostRecent = Directory.GetFiles(unreleasedPath, "*.md")
+                .OrderByDescending(f => Path.GetFileName(f))
+                .FirstOrDefault();
+            if (mostRecent != null)
+                targetPath = mostRecent;
+        }
+
+        if (targetPath == null)
+        {
+            string path = CreateFragment(message, category);
+            return (path, false, formattedCategory);
+        }
+
+        string content = File.ReadAllText(targetPath, Encoding.UTF8);
+        string bullet = $"- {message}";
+
+        var existing = new ChangelogParser().Parse(content).GetSection(formattedCategory);
+        if (existing.Any(item => item.Trim() == bullet.Trim()))
+            throw new InvalidOperationException($"'{message}' already exists in the '{formattedCategory}' section of {Path.GetFileName(targetPath)}.");
+
+        File.WriteAllText(targetPath, AddBulletToSection(content, formattedCategory, bullet), Encoding.UTF8);
+        return (targetPath, true, formattedCategory);
+    }
+
+    private static string AddBulletToSection(string content, string category, string bullet)
+    {
+        string[] lines = content.Replace("\r\n", "\n").Split('\n');
+        string headingPrefix = $"### {category}";
+        int headingIndex = -1;
+
+        for (int i = lines.Length - 1; i >= 0; i--)
+        {
+            string trimmed = lines[i].TrimStart();
+            if (trimmed.StartsWith(headingPrefix, StringComparison.OrdinalIgnoreCase)
+                && (trimmed.Length == headingPrefix.Length || char.IsWhiteSpace(trimmed[headingPrefix.Length])))
+            {
+                headingIndex = i;
+                break;
+            }
+        }
+
+        if (headingIndex < 0)
+        {
+            string tail = content.TrimEnd('\n', ' ', '\t');
+            string separator = string.IsNullOrEmpty(tail) ? "" : "\n\n";
+            return tail + separator + $"### {category}{Environment.NewLine}{bullet}{Environment.NewLine}";
+        }
+
+        int sectionEnd = lines.Length;
+        for (int i = headingIndex + 1; i < lines.Length; i++)
+        {
+            if (lines[i].TrimStart().StartsWith("### "))
+            {
+                sectionEnd = i;
+                break;
+            }
+        }
+
+        int insertAt = sectionEnd;
+        while (insertAt > headingIndex + 1 && string.IsNullOrWhiteSpace(lines[insertAt - 1]))
+            insertAt--;
+
+        var list = new List<string>(lines);
+        list.Insert(insertAt, bullet);
+        return string.Join('\n', list) + "\n";
+    }
+
     private string? GetGitBranchName()
     {
         try
@@ -441,6 +543,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         {
             return null;
         }
+    }
+
+    public bool IsDefaultBranch()
+    {
+        return GetGitBranchName() is "main" or "master";
+    }
+
+    private (int Cap, bool FromBranch) ResolveMaxImpact(ChangeSharpConfig config)
+    {
+        int globalCap = NextVersionComputer.ParseImpact(config.SemverPolicy.MaxImpact);
+        string? branch = GetGitBranchName();
+
+        foreach (var kv in config.SemverPolicy.BranchMaxImpact)
+        {
+            if (branch != null && BranchMatches(branch, kv.Key))
+            {
+                int branchCap = NextVersionComputer.ParseImpact(kv.Value);
+                if (branchCap > 0)
+                    return (Math.Min(globalCap, branchCap), true);
+            }
+        }
+
+        return (globalCap, false);
+    }
+
+    private static bool BranchMatches(string branch, string pattern)
+    {
+        if (pattern == "*") return true;
+        if (pattern.EndsWith('*'))
+            return branch.StartsWith(pattern[..^1], StringComparison.OrdinalIgnoreCase);
+        return string.Equals(branch, pattern, StringComparison.OrdinalIgnoreCase);
     }
 
     public void GetStatus(
