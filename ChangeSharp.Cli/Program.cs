@@ -169,6 +169,8 @@ class Program
 
         if (messageFile != null)
         {
+            if (messageFile.Contains(".."))
+                return (null, o.Err("Invalid file path", ExitCodeGenericError));
             if (!File.Exists(messageFile))
                 return (null, o.Err($"File not found: {messageFile}", ExitCodeGenericError));
             return (File.ReadAllText(messageFile).Trim(), null);
